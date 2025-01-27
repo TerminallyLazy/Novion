@@ -1,0 +1,75 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id          String       @id @default(cuid())
+  settings    Settings?
+  studies     Study[]
+  annotations Annotation[]
+}
+
+model Settings {
+  id                String @id @default(cuid())
+  user              User   @relation(fields: [userId], references: [id])
+  userId            String @unique
+  defaultViewLayout String @default("AXIAL")
+  theme             String @default("dark")
+  windowPresets     String @default("[]") // Stored as JSON string
+}
+
+model Study {
+  id           String       @id @default(cuid())
+  dicomUrl     String
+  patientId    String
+  patientName  String?
+  studyDate    DateTime
+  modality     String
+  description  String
+  seriesNumber String?
+  numImages    Int          @default(1)
+  metadata     String? // JSON string of additional DICOM metadata
+  user         User         @relation(fields: [userId], references: [id])
+  userId       String
+  annotations  Annotation[]
+  reports      Report[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Annotation {
+  id         String   @id @default(cuid())
+  study      Study    @relation(fields: [studyId], references: [id])
+  studyId    String
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  type       String // "MEASUREMENT", "MARKER", "FREEHAND"
+  data       String // Stored as JSON string
+  aiAnalysis String? // AI-generated insights
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  study      Study    @relation(fields: [studyId], references: [id])
+  studyId    String
+  content    String // Markdown format
+  findings   String // AI-assisted findings
+  impression String
+  status     String // "DRAFT", "PENDING", "FINAL"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AIAnalysis {
+  id        String   @id @default(cuid())
+  taskId    String   @unique
+  result    String // JSON string of analysis result
+  createdAt DateTime @default(now())
+}
