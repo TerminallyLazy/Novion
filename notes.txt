@@ -1,0 +1,52 @@
+Gemini WebSocket Audio Fix - Technical Notes
+
+Problem:
+The WebSocket connection was receiving audio data from Gemini, but the audio playback was either:
+1. Distorted/high-pitched noise
+2. No sound at all
+
+Root Cause:
+The WebSocket server was sending audio data in two different formats:
+1. Binary messages containing raw PCM audio data
+2. JSON messages containing base64-encoded audio data in the "inlineData" field
+
+Solution:
+The fix involved properly handling both types of messages in the receive_from_gemini function:
+
+1. For binary messages (ws.recv() returns bytes):
+   - First try to decode as UTF-8 and parse as JSON (some binary messages are actually JSON text)
+   - If that fails (UnicodeDecodeError or JSONDecodeError), treat as raw PCM audio data
+   - Write the raw PCM data directly to the audio stream
+
+2. For text messages:
+   - Parse as JSON
+   - Look for audio data in serverContent -> modelTurn -> parts -> inlineData
+   - Decode the base64 audio data before playing
+
+Key Code Changes:
+```python
+# Handle binary messages (raw audio data)
+if isinstance(msg, bytes):
+    try:
+        # Try to parse as JSON first (for text messages)
+        text_msg = msg.decode('utf-8')
+        data = json.loads(text_msg)
+        # ... handle JSON content ...
+    
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        # If not JSON, treat as raw PCM audio data
+        print(f"Received raw audio chunk of size: {len(msg)} bytes")
+        playback_stream.write(msg)
+```
+
+Audio Configuration:
+- Format: 16-bit little-endian PCM
+- Channels: 1 (mono)
+- Sample Rate: 24kHz for output
+- Chunk Size: 1024 samples
+- Buffer Size: 4096 bytes
+
+Important Notes:
+1. No need to manually handle byte order or sample conversion - the audio data from Gemini is already in the correct format
+2. Both raw PCM and base64-encoded audio data are properly formatted for direct playback
+3. The WAV file debug output helped identify the correct message handling strategy
