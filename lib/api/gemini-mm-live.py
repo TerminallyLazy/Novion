@@ -24,13 +24,13 @@ uri = f"wss://{host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.B
 MODEL_NAME = "gemini-2.0-flash-exp"
 
 # Audio constants:
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 2048
 AUDIO_FORMAT = pyaudio.paInt16
 NUM_CHANNELS = 1
 INPUT_SAMPLE_RATE = 16000  # Input: 16kHz little-endian PCM
 OUTPUT_SAMPLE_RATE = 24000 # Output: 24kHz little-endian PCM
 BYTES_PER_SAMPLE = 2      # 16-bit = 2 bytes per sample
-BUFFER_SIZE = 4096        # Larger buffer for stability
+BUFFER_SIZE = 8192        # Larger buffer for stability
 
 # ------------------------------------------------------------------------------
 # "BidiGenerateContentSetup" message to initialize the session
@@ -43,7 +43,7 @@ setup_message = {
             "speech_config": {
                 "voice_config": {
                     "prebuilt_voice_config": {
-                        "voice_name": "Aoede"
+                        "voice_name": "Kore"
                     }
                 }
             }

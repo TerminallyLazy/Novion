@@ -45,6 +45,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardBody } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { DicomViewer } from '@/components/DicomViewer';
+import Image from 'next/image';
 
 // Add type declarations for the Web Speech API
 interface SpeechGrammar {
@@ -87,7 +88,7 @@ interface SpeechRecognitionResultList {
 interface SpeechRecognitionResult {
   [index: number]: SpeechRecognitionAlternative;
   length: number;
-  item(index: number): SpeechRecognitionAlternative;
+  item(index: number): SpeechRecognitionResult;
   isFinal: boolean;
 }
 
@@ -199,15 +200,15 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
 
   return (
     <Panel
-      className="h-full bg-[#1B2433] border-r border-[#2D3848] flex flex-col shadow-md overflow-hidden relative"
+      className="h-full flex flex-col shadow-md overflow-hidden relative bg-white dark:bg-card"
       width={isExpanded ? 320 : 48}
     >
-      <div className="flex items-center justify-between h-12 px-4 border-b border-[#2D3848]">
+      <div className="flex items-center justify-between h-12 px-4 border-b border-[#e4e7ec] dark:border-[#2D3848]">
         <span className={cn("font-medium truncate text-center w-full", !isExpanded && "opacity-0")}>
           Tools
         </span>
         <button
-          className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
+          className="p-2 hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
           onClick={() => onExpandedChange(!isExpanded)}
           aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
         >
@@ -250,7 +251,7 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
               min={0}
               max={4000}
               step={1}
-              className="relative w-full h-1.5 bg-[#4cedff]/10 rounded-full overflow-hidden [&>[role=slider]]:block [&>[role=slider]]:w-4 [&>[role=slider]]:h-4 [&>[role=slider]]:rounded-full [&>[role=slider]]:bg-[#4cedff] [&>[role=slider]]:shadow-[0_0_0_2px_rgba(76,237,255,0.4),0_0_10px_rgba(76,237,255,0.3)] [&>[role=slider]]:focus:outline-none [&>[role=slider]]:focus:ring-2 [&>[role=slider]]:focus:ring-[#4cedff]/50 [&>.range]:absolute [&>.range]:h-full [&>.range]:bg-[#4cedff] [&>.range]:shadow-[0_0_15px_rgba(76,237,255,0.4)]"
+              className="relative w-full h-1.5 rounded-full overflow-hidden [&>[role=slider]]:block [&>[role=slider]]:w-4 [&>[role=slider]]:h-4 [&>[role=slider]]:rounded-full [&>[role=slider]]:bg-[#4cedff] [&>[role=slider]]:shadow-[0_0_0_2px_rgba(76,237,255,0.4),0_0_10px_rgba(76,237,255,0.3)] [&>[role=slider]]:focus:outline-none [&>[role=slider]]:focus:ring-2 [&>[role=slider]]:focus:ring-[#4cedff]/50 [&>.range]:absolute [&>.range]:h-full [&>.range]:bg-[#4cedff] [&>.range]:shadow-[0_0_15px_rgba(76,237,255,0.4)]"
             />
           </div>
           <div className="slider-label">
@@ -280,8 +281,8 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
           </div>
         </div>
 
-        <div className="tool-section">
-          <h3 className="tool-section-title">View</h3>
+        <div className="tool-section border-b border-[#e4e7ec] dark:border-[#2D3848]">
+          <h3 className="tool-section-title text-[#64748b] dark:text-foreground/60">View</h3>
           <div className="tool-grid">
             <CustomToolButton
               icon={Move}
@@ -427,7 +428,7 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
                   description: "Opening settings...",
                 });
               }}
-              className="flex justify-center items-center"
+              className="flex justify-center w-fullitems-center"
             />
           </div>
         </div>
@@ -466,10 +467,10 @@ function TopToolbar({
   };
 
   return (
-    <div className="top-header">
+    <div className="h-12 px-4 flex items-center justify-between bg-white dark:bg-[#0a0d13] border-b border-[#e2e8f0] dark:border-[#1b2538]">
       <div className="top-header-section">
         <button
-          className="tool-button !w-8 !h-8"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={() => {}}
           aria-label="Reset view"
         >
@@ -477,7 +478,7 @@ function TopToolbar({
         </button>
 
         <select 
-          className="viewer-select"
+          className="bg-[#f8fafc] dark:bg-[#161d2f] text-foreground border-[#e2e8f0] dark:border-[#1b2538] rounded-md px-3 py-1.5"
           value={selectedView}
           onChange={(e) => setSelectedView(e.target.value)}
         >
@@ -487,9 +488,20 @@ function TopToolbar({
         </select>
       </div>
 
+      <div className="flex items-center justify-center flex-1">
+        <Image
+          src={theme === 'dark' ? "/helix-matrix-dark.png" : "/helix-matrix-light.png"}
+          alt="GeneSys Logo"
+          width={180}
+          height={80}
+          className="object-contain"
+          priority
+        />
+      </div>
+
       <div className="top-header-section">
         <button
-          className="tool-button !w-8 !h-8"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
           aria-label="Toggle theme"
         >
@@ -500,14 +512,14 @@ function TopToolbar({
           )}
         </button>
         <button
-          className="tool-button !w-8 !h-8"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={cycleLayout}
           aria-label="Toggle layout"
         >
           <Layout className="h-4 w-4" />
         </button>
         <button
-          className="tool-button !w-8 !h-8"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={onToggleFullscreen}
           aria-label="Toggle fullscreen"
         >
@@ -540,7 +552,7 @@ function ViewportGrid({
   };
 
   return (
-    <div className="p-4 h-full relative">
+    <div className="p-4 h-full relative bg-[#f8fafc] dark:bg-[#0f131c]">
       <div className={cn(
         "grid gap-4 h-full",
         expandedViewport ? "invisible" : gridConfig[layout]
@@ -599,7 +611,10 @@ function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand 
     <div 
       className={cn(
         "relative w-full h-full min-h-0 rounded-lg overflow-hidden",
-        "border border-[#1b2538] transition-all duration-200",
+        "border transition-all duration-200",
+        "bg-[#0a0d13]",
+        "border-[#1b2538]",
+        "shadow-[inset_0_0_10px_rgba(0,0,0,0.3)]",
         isActive && "border-[#4cedff] ring-1 ring-[#4cedff] shadow-[0_0_30px_rgba(76,237,255,0.2)]",
         isExpanded && "absolute inset-4 m-0 z-30 shadow-[0_0_40px_rgba(76,237,255,0.25)]"
       )}
@@ -610,11 +625,11 @@ function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand 
         isActive={isActive}
         onActivate={onActivate}
       />
-      <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium bg-[#161d2f] rounded text-foreground/80">
+      <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded bg-[#161d2f]/80 text-foreground/80 backdrop-blur-sm">
         {type}
       </div>
       <button
-        className="absolute top-2 right-2 p-1.5 rounded-md bg-[#161d2f] hover:bg-[#1f2642] text-foreground/80 hover:text-[#4cedff] transition-colors shadow-md"
+        className="absolute top-2 right-2 p-1.5 rounded-md bg-[#161d2f]/80 hover:bg-[#1f2642] text-foreground/80 hover:text-[#4cedff] transition-colors shadow-md backdrop-blur-sm"
         onClick={(e) => {
           e.stopPropagation();
           onToggleExpand();
@@ -631,7 +646,7 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
 
   return (
     <Panel
-      className="h-full bg-[#1B2433] border-l border-[#2D3848] flex flex-col shadow-md overflow-hidden relative"
+      className="flex flex-col shadow-md overflow-hidden relative"
       width={isExpanded ? 320 : 48}
     >
       <div className="flex items-center justify-between h-12 px-4 border-b border-[#2D3848]">
@@ -657,7 +672,7 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
       )}>
         <div className="p-4 space-y-4">
           <Select defaultValue="study-1">
-            <SelectTrigger className="w-full bg-[#1b2237] border-[#2D3848]">
+            <SelectTrigger className="w-full ">
               <SelectValue placeholder="Select a study to analyze" />
             </SelectTrigger>
             <SelectContent>
@@ -666,7 +681,7 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
           </Select>
 
           <Select defaultValue="mammogram">
-            <SelectTrigger className="w-full bg-[#1b2237] border-[#2D3848]">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Mammogram Analysis" />
             </SelectTrigger>
             <SelectContent>
@@ -675,7 +690,7 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
           </Select>
 
           <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-            <TabsList className="grid w-full grid-cols-2 gap-1 p-1 bg-[#1b2237] rounded-md">
+            <TabsList className="grid w-full grid-cols-2 gap-1 p-1 rounded-md">
               <TabsTrigger 
                 value="analysis" 
                 className={cn(

@@ -1,58 +1,7 @@
+@import "@/styles/theme.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@layer base {
-  :root {
-    --background: 224 30% 6%;
-    --foreground: 210 25% 98%;
-    --card: 224 35% 10%;
-    --card-foreground: 210 25% 98%;
-    --popover: 224 35% 10%;
-    --popover-foreground: 210 25% 98%;
-    --primary: 186 100% 65%;
-    --primary-foreground: 224 30% 6%;
-    --secondary: 224 35% 14%;
-    --secondary-foreground: 210 25% 98%;
-    --muted: 224 35% 14%;
-    --muted-foreground: 210 25% 70%;
-    --accent: 191 94% 65%;
-    --accent-foreground: 224 30% 6%;
-    --destructive: 0 100% 65%;
-    --destructive-foreground: 210 25% 98%;
-    --border: 224 35% 14%;
-    --input: 224 35% 14%;
-    --ring: 191 94% 65%;
-    --radius: 0.75rem;
-    --viewer-background: 224 30% 8%;
-    --annotation-primary: 191 94% 65%;
-    --annotation-secondary: 280 100% 65%;
-    --measurement-color: 191 94% 65%;
-    --highlight: 191 94% 65%;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-  }
-}
 
 @layer base {
   * {
@@ -70,10 +19,10 @@
   .panel-toggle {
     position: absolute;
     top: 50%;
-    transform: translateY(-50%);
+    /* transform: translateY(-50%); */
     z-index: 10;
     width: 24px;
-    height: 96px;
+    height: 100px;
     background-color: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1);
@@ -134,17 +83,22 @@
   .dicom-viewport {
     @apply bg-[#0a0d13] rounded-lg overflow-hidden relative;
     touch-action: none;
+    height: 100%;
   }
 
   .viewport-gradient {
-    @apply absolute inset-0 pointer-events-none;
-    background: linear-gradient(180deg, rgba(15, 19, 28, 0.9) 0%, rgba(15, 19, 28, 0) 25%),
-                linear-gradient(0deg, rgba(15, 19, 28, 0.9) 0%, rgba(15, 19, 28, 0) 25%);
+    @apply absolute inset-0 pointer-events-none z-10;
+    background: linear-gradient(180deg, 
+      rgba(15, 19, 28, 0) 0%,
+      rgba(15, 19, 28, 0.3) 15%,
+      rgba(15, 19, 28, 0.3) 85%,
+      rgba(15, 19, 28, 0.95) 100%
+    );
   }
 
   .viewport-expand-button {
     @apply absolute top-2 right-2 p-1.5 rounded-md;
-    @apply bg-[#161d2f] hover:bg-[#1f2642] text-foreground/80 hover:text-[#4cedff];
+    @apply bg-[#161d2f] hover:bg-[#1f2642] text-foreground/90 hover:text-[#4cedff];
     @apply transition-colors shadow-md;
   }
 
@@ -153,10 +107,12 @@
   }
 
   .viewport-panel {
-    @apply relative rounded-lg overflow-hidden min-h-[400px];
+    @apply relative rounded-lg overflow-hidden;
     background-color: hsl(224 30% 6%);
     border-color: hsl(224 35% 14%);
     @apply shadow-[inset_0_0_10px_rgba(0,0,0,0.3)];
+    height: 100%;
+    min-height: 400px;
   }
 
   .viewport-panel.active {
@@ -166,7 +122,7 @@
 
   .viewport-label {
     @apply absolute top-2 left-2 px-2 py-1 text-xs font-medium;
-    @apply bg-[#161d2f] rounded text-foreground/80;
+    @apply bg-[#161d2f] rounded text-foreground/40;
   }
 
   .tool-section {
@@ -175,19 +131,20 @@
   }
 
   .tool-section-title {
-    @apply text-xs font-medium text-foreground/60 uppercase tracking-wider mb-2;
+    @apply text-xs font-medium text-foreground/60 text-center border-b border-foreground/10 uppercase tracking-wider mb-2;
   }
 
   .tool-grid {
-    @apply grid grid-cols-2 gap-2;
+    @apply grid grid-cols-4 gap-1 place-items-center;
   }
 
   .tool-button {
     @apply relative aspect-square rounded-md transition-all duration-200 ease-in-out;
     @apply flex items-center justify-center;
+    @apply w-full max-w-[4.5rem];
     background-color: hsl(224 30% 10%);
     border: 1px solid #1b2538;
-    height: 2.25rem;
+    height: 4.5rem;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 
@@ -206,7 +163,7 @@
   }
 
   .tool-button-icon {
-    @apply w-4 h-4;
+    @apply w-20 h-20
   }
 
   .right-sidebar {
@@ -330,15 +287,15 @@
 
   .viewport-container {
     @apply grid gap-8 p-8 bg-background;
-    height: calc(100vh - 3rem);
-    max-height: calc(100vh - 3rem);
+    height: calc(100vh - 5rem);
+    max-height: calc(100vh - 5rem);
     overflow: hidden;
   }
 
   .viewport {
     background-color: hsl(var(--viewer-background));
-    @apply relative w-full h-full min-h-0 rounded-lg overflow-hidden;
-    border: 1px solid #4cedff;
+    @apply relative rounded-lg ;
+    /* border: 1px solid #4cedff; */
     box-shadow: 
       inset 0 0 0 1px rgba(76, 237, 255, 0.2),
       0 0 20px rgba(76, 237, 255, 0.1);
@@ -429,4 +386,4 @@
   .processing {
     animation: pulse 2s infinite;
   }
-} 
+}
