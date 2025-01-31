@@ -63,18 +63,17 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
 
   const startAudioProcessing = useCallback((audioStream: MediaStream) => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext()
-        // sampleRate: 16000
+      audioContextRef.current = new AudioContext();  // Use default sample rate
     }
 
     const source = audioContextRef.current.createMediaStreamSource(audioStream);
     const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1);
     processorNodeRef.current = processor;
+
     processor.onaudioprocess = async (e) => {
       if (isConnected) {
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // convert float32array to int16array
         // Downsample to 16kHz if needed
         const downsampledLength = Math.floor(inputData.length * 16000 / audioContextRef.current!.sampleRate);
         const downsampledData = new Float32Array(downsampledLength);
@@ -85,7 +84,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
         }
         
         // Convert Float32Array to Int16Array for proper PCM format
-        const pcmData = new Int16Array(downsampledData.length);  
+        const pcmData = new Int16Array(downsampledData.length);
         for (let i = 0; i < downsampledData.length; i++) {
           pcmData[i] = Math.max(-32768, Math.min(32767, Math.floor(downsampledData[i] * 32768)));
         }
@@ -102,22 +101,26 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
     source.connect(processor);
     processor.connect(audioContextRef.current.destination);
     addLog('info', 'Started audio processing');
-  }, [isConnected, sendAudioChunk]);
+  }, [isConnected, sendAudioChunk, addLog]);
 
-  const handleConnectionClick = useCallback(async () => {
+  const handleStartClick = useCallback(async () => {
     try {
       if (isConnected) {
-        disconnect();
+        await disconnect();
+        setActiveButton(null);
         addLog('info', 'Disconnected from Gemini API');
       } else {
+        setActiveButton('connecting');
         await connect();
-        addLog('info', 'Connecting to Gemini API...');
+        setActiveButton('connected');
+        addLog('info', 'Connected to Gemini API');
       }
     } catch (error) {
-      console.error('Connection error:', error);
+      console.error('Error with Gemini connection:', error);
       addLog('error', `Connection error: ${error}`);
+      setActiveButton(null);
     }
-  }, [isConnected, connect, disconnect]);
+  }, [isConnected, connect, disconnect, addLog]);
 
   const handleMicrophoneClick = useCallback(async () => {
     try {
@@ -134,7 +137,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
         addLog('info', 'Microphone disabled');
       } else {
         const audioStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: true
+          audio: true  // Use default settings, we'll downsample in processing
         });
         setStream(audioStream);
         startAudioProcessing(audioStream);
@@ -145,7 +148,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
       console.error('Error accessing microphone:', error);
       addLog('error', `Microphone error: ${error}`);
     }
-  }, [activeButton, stream, startAudioProcessing]);
+  }, [activeButton, stream, startAudioProcessing, addLog]);
 
   const handleScreenshareClick = useCallback(async () => {
     try {
@@ -250,35 +253,24 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
         bounds="body"
         handle=".handle"
         disabled={isResizing}
-        onStart={(e) => {
-          if (!(e.target as HTMLElement).classList.contains('handle')) {
-            return false;
-          }
-        }}
-        onDrag={(e) => {
-          if (e.stopPropagation) e.stopPropagation();
-        }}
       >
         <div 
           ref={panelRef}
-          className="absolute bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-3 select-none"
+          className="absolute bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-3 transition-all duration-300"
           style={{
             width: `${panelSize.width}px`,
             height: isLogExpanded ? `${panelSize.height}px` : '120px',
             zIndex: 9999,
-            transform: 'translate(0, 0)',
-            userSelect: 'none',
-            touchAction: 'none'
           }}
         >
-          <div className="handle cursor-move flex items-center justify-between mb-2 select-none">
-            <div className="flex items-center gap-2 handle">
+          <div className="handle cursor-move flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
               <div className={cn(
-                "w-2 h-2 rounded-full handle",
+                "w-2 h-2 rounded-full",
                 isConnecting ? "bg-yellow-400 animate-pulse" :
                 isConnected ? "bg-green-400" : "bg-red-400"
               )} />
-              <span className="text-xs text-foreground/60 handle">
+              <span className="text-xs text-foreground/60">
                 {isConnecting ? "Connecting..." :
                  isConnected ? "Connected" : "Disconnected"}
               </span>
@@ -296,16 +288,16 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
 
           <div className="flex justify-center gap-2 mb-2">
             <button
-              onClick={handleConnectionClick}
+              onClick={handleStartClick}
               className={cn(
                 "p-2 rounded-lg transition-all duration-200 transform hover:scale-105 cursor-pointer",
                 "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
                 "bg-[#2D3848] hover:bg-[#374357]",
-                isConnected ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" : "text-foreground/80"
+                (isConnected || activeButton === 'connected') ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" : "text-foreground/80"
               )}
               title={isConnected ? "Disconnect from Gemini API" : "Connect to Gemini API"}
             >
-              {isConnected ? (
+              {(isConnected || activeButton === 'connected') ? (
                 <Pause className="h-5 w-5" />
               ) : (
                 <Play className="h-5 w-5" />
@@ -424,12 +416,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
           {isLogExpanded && (
             <div
               ref={resizeRef}
-              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-50 hover:opacity-100 transition-opacity"
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50"
               onMouseDown={handleResizeStart}
               style={{
-                background: 'linear-gradient(135deg, transparent 40%, rgba(76, 237, 255, 0.2) 40%, rgba(76, 237, 255, 0.2) 50%, rgba(76, 237, 255, 0.4) 50%, rgba(76, 237, 255, 0.4) 60%, rgba(76, 237, 255, 0.6) 60%, rgba(76, 237, 255, 0.6) 70%, #4cedff 70%)',
+                background: 'linear-gradient(135deg, transparent 50%, #4cedff 50%)',
                 borderBottomRightRadius: '0.5rem',
-                opacity: 0.7
               }}
             />
           )}

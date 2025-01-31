@@ -10,6 +10,7 @@ from websockets.server import serve
 from dotenv import load_dotenv
 import struct
 import wave
+import requests 
 
 # ------------------------------------------------------------------------------
 # ENV and constants
@@ -18,11 +19,14 @@ load_dotenv()
 
 host = "generativelanguage.googleapis.com"
 WEB_SERVER_PORT = 8080  # Port for the frontend to connect to
-
-# Gemini 2.0 Multimodal Live API endpoint:
 api_key = os.environ["GEMINI_API_KEY"]
 uri = f"wss://{host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key={api_key}"
 
+# Global variables
+frontend_websockets = set()
+gemini_websocket = None
+
+# Gemini 2.0 Multimodal Live API endpoint:
 MODEL_NAME = "gemini-2.0-flash-exp"
 
 # Audio constants:
@@ -33,6 +37,10 @@ INPUT_SAMPLE_RATE = 16000  # Input: 16kHz little-endian PCM
 OUTPUT_SAMPLE_RATE = 24000 # Output: 24kHz little-endian PCM
 BYTES_PER_SAMPLE = 2      # 16-bit = 2 bytes per sample
 BUFFER_SIZE = 8192        # Larger buffer for stability
+
+# Add at the top with other globals
+mic_muted = False
+isConnected = False
 
 # ------------------------------------------------------------------------------
 # "BidiGenerateContentSetup" message to initialize the session
@@ -124,81 +132,154 @@ def build_text_message(user_input: str) -> str:
     }
     return json.dumps(msg)
 
+#------------------------------------------------------------------------------
+# Main session
+# ------------------------------------------------------------------------------
+async def gemini_session():
+    """
+    Opens a WebSocket connection with the Gemini server and maintains it until explicitly disconnected.
+    """
+    global gemini_websocket, mic_muted, isConnected
+
+    try:
+        async with websockets.connect(uri) as websocket:
+            gemini_websocket = websocket
+            isConnected = True
+            print("Connected to Gemini API")
+
+            # Send setup message and wait for completion
+            await websocket.send(json.dumps(setup_message))
+            
+            while True:
+                try:
+                    message = await websocket.recv()
+                    # Process messages but don't auto-disconnect
+                    if isinstance(message, str):
+                        data = json.loads(message)
+                        if "error" in data:
+                            print(f"Gemini error: {data['error']}")
+                            continue
+                    
+                    # Forward message to frontend
+                    for frontend_ws in frontend_websockets:
+                        try:
+                            await frontend_ws.send(message if isinstance(message, str) else message.decode())
+                        except:
+                            pass
+                            
+                except websockets.exceptions.ConnectionClosed:
+                    break
+                    
+    except Exception as e:
+        print(f"Gemini session error: {e}")
+    finally:
+        isConnected = False
+        gemini_websocket = None
+        print("Session ended")
+
+
+# def build_audio_chunk_message(chunk: bytes) -> str:
+#     """
+#     Encapsulate a chunk of PCM audio in base64 inside
+#     BidiGenerateContentRealtimeInput, so Gemini can perform
+#     speech recognition via VAD. 
+#     """
+#     b64_data = base64.b64encode(chunk).decode("utf-8")
+#     msg = {
+#         "realtime_input": {
+#             "media_chunks": [
+#                 {
+#                     "data": b64_data,
+#                     "mime_type": "audio/pcm"
+#                 }
+#             ]
+#         }
+#     }
+#     return json.dumps(msg)
+
 
 def build_audio_chunk_message(chunk: bytes) -> str:
-    """
-    Encapsulate a chunk of PCM audio in base64 inside
-    BidiGenerateContentRealtimeInput, so Gemini can perform
-    speech recognition via VAD. 
-    """
+    """Properly format audio chunks for Gemini API"""
+    # Validate chunk size
+    if len(chunk) != CHUNK_SIZE * BYTES_PER_SAMPLE:
+        print(f"Warning: Invalid chunk size {len(chunk)}, expected {CHUNK_SIZE * BYTES_PER_SAMPLE}")
+        return None
+        
+    # Validate PCM data
+    try:
+        pcm_data = struct.unpack(f"<{CHUNK_SIZE}h", chunk)  # little-endian 16-bit samples
+        if any(sample < -32768 or sample > 32767 for sample in pcm_data):
+            print("Warning: Invalid PCM sample values detected")
+            return None
+    except struct.error as e:
+        print(f"Error unpacking PCM data: {e}")
+        return None
+        
     b64_data = base64.b64encode(chunk).decode("utf-8")
     msg = {
-        "realtime_input": {
-            "media_chunks": [
-                {
-                    "data": b64_data,
-                    "mime_type": "audio/pcm"
-                }
-            ]
+        "streamInput": {
+            "audio": {
+                "data": b64_data,
+                "encoding": "LINEAR16",
+                "sampleRate": INPUT_SAMPLE_RATE
+            }
         }
     }
     return json.dumps(msg)
 
 
-# ------------------------------------------------------------------------------
-# Main session
-# ------------------------------------------------------------------------------
-async def gemini_session():
-    """
-    Opens a WebSocket connection with the Gemini server, sends the setup,
-    waits for BidiGenerateContentSetupComplete, then concurrently handles:
-      - reading microphone input and sending it to Gemini
-      - reading user text input from console
-      - receiving both text and audio from Gemini
-      - playing back audio at 24k
-    """
+
+# async def gemini_session():
+#     """
+#     Opens a WebSocket connection with the Gemini server, sends the setup,
+#     waits for BidiGenerateContentSetupComplete, then concurrently handles:
+#       - reading microphone input and sending it to Gemini
+#       - reading user text input from console
+#       - receiving both text and audio from Gemini
+#       - playing back audio at 24k
+#     """
     
-    async with websockets.connect(
-        uri
-    ) as websocket:
+#     async with websockets.connect(
+#         uri
+#     ) as websocket:
         
-        await websocket.send(json.dumps(setup_message))
-        print("Sent BidiGenerateContentSetup. Waiting for 'BidiGenerateContentSetupComplete'...")
+#         await websocket.send(json.dumps(setup_message))
+#         print("Sent BidiGenerateContentSetup. Waiting for 'BidiGenerateContentSetupComplete'...")
         
-        while True:
-            init_resp = await websocket.recv()
+#         while True:
+#             init_resp = await websocket.recv()
 
-            try:
-                data = json.loads(init_resp)
-            except json.JSONDecodeError:
+#             try:
+#                 data = json.loads(init_resp)
+#             except json.JSONDecodeError:
              
-                print("Unexpected non-JSON response before setup complete.")
-                continue
+#                 print("Unexpected non-JSON response before setup complete.")
+#                 continue
          
-            if "setupComplete" in data:
-                print("Gemini: Setup complete. You may now speak or type. Type 'exit' to quit.\n")
-                break
-            else:
-                # Could be an error or some other message.
-                print("Received unexpected message during setup:", data)
+#             if "setupComplete" in data:
+#                 print("Gemini: Setup complete. You may now speak or type. Type 'exit' to quit.\n")
+#                 break
+#             else:
+#                 # Could be an error or some other message.
+#                 print("Received unexpected message during setup:", data)
 
-        # ----------------------------------------------------------------------
-        loop = asyncio.get_event_loop()
-        mic_task = loop.create_task(audio_capture_task(websocket))
-        text_task = loop.create_task(text_input_task(websocket))
-        receive_task = loop.create_task(receive_from_gemini(websocket))
+#         # ----------------------------------------------------------------------
+#         loop = asyncio.get_event_loop()
+#         mic_task = loop.create_task(audio_capture_task(websocket))
+#         text_task = loop.create_task(text_input_task(websocket))
+#         receive_task = loop.create_task(receive_from_gemini(websocket))
 
-        done, pending = await asyncio.wait(
-            [mic_task, text_task, receive_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
+#         done, pending = await asyncio.wait(
+#             [mic_task, text_task, receive_task],
+#             return_when=asyncio.FIRST_COMPLETED
+#         )
 
-        for task in pending:
-            task.cancel()
+#         for task in pending:
+#             task.cancel()
 
-        if not websocket.closed:
-            await websocket.close()
-        print("Session closed.")
+#         if not websocket.closed:
+#             await websocket.close()
+#         print("Session closed.")
 
 # ------------------------------------------------------------------------------
 # Task: capturing audio from the microphone at 16 kHz and sending to Gemini
@@ -206,10 +287,9 @@ async def gemini_session():
 async def audio_capture_task(ws: websockets.WebSocketClientProtocol):
     """
     Continuously read from the microphone in small CHUNK_SIZE frames
-    and send them to Gemini as BidiGenerateContentRealtimeInput.
-    The server's Voice Activity Detection will figure out when you
-    started/stopped talking and handle partial recognition.
+    and send them to Gemini only when connected and not muted.
     """
+    global mic_muted
     pa = pyaudio.PyAudio()
     stream = pa.open(
         format=AUDIO_FORMAT,
@@ -220,9 +300,11 @@ async def audio_capture_task(ws: websockets.WebSocketClientProtocol):
     )
     try:
         while True:
-            audio_chunk = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-            msg_str = build_audio_chunk_message(audio_chunk)
-            await ws.send(msg_str)
+            if not mic_muted and isConnected:  # Only send audio when not muted and connected
+                audio_chunk = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                msg_str = build_audio_chunk_message(audio_chunk)
+                if msg_str:  # Only send if message was built successfully
+                    await ws.send(msg_str)
             await asyncio.sleep(0.001)
     except asyncio.CancelledError:
         pass
@@ -250,6 +332,118 @@ async def text_input_task(ws: websockets.WebSocketClientProtocol):
             return
         message_str = build_text_message(user_text)
         await ws.send(message_str)
+
+
+# ------------------------------------------------------------------------------
+# Web search function
+# ------------------------------------------------------------------------------
+def perform_web_search(query):
+    """Performs a web search using an external API."""
+    try:
+        # Replace with your preferred web search API
+        search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx=YOUR_CUSTOM_SEARCH_ID&key=YOUR_API_KEY" # added constants
+        response = requests.get(search_url)
+        response.raise_for_status() # Raise an exception for HTTP errors
+        search_results = response.json()
+
+        # Format results if needed
+        formatted_results = json.dumps(search_results, indent = 2)
+        return formatted_results
+    except requests.exceptions.RequestException as e:
+        print(f"Error performing web search:{e}")
+        return None
+
+
+# ------------------------------------------------------------------------------
+# Medical image function
+# ------------------------------------------------------------------------------
+async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str = None) -> str:
+    """
+    Fetches medical imaging data from a public API, analyzes it,
+    and returns analysis result as a text string.
+
+    Args:
+        gemini_response (dict): Full response from Gemini.
+        api_key (str, optional): API key for the medical image API.
+
+    Returns:
+        str: Textual analysis result or an error message.
+    """
+    try:
+      # 1. Identify if images are needed via the model's response
+      if "I need to see" not in gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "").lower():
+          return "No medical imaging was needed"
+
+      # 2. Get the search terms from Gemini's response
+      search_terms = gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "")
+      if not search_terms:
+           return "Error: could not extract search terms from gemini response."
+        
+       #  Extract keywords from the search terms:
+      keywords = search_terms.replace("I need to see","").replace("chest x-ray","").strip()
+
+      # 3. Search for images via a medical image API
+      # Note: Need to implement a function to call and retrieve images from public api.
+      # Please replace <call public api to search and download images with function call here>
+
+      image_data, image_type, image_format = await get_images_from_api(keywords, api_key)
+
+      if not image_data:
+            return "Error: no medical imaging images were found."
+
+      #4. Load the DICOM Image into my app's dicom viewer.
+       # Note, implement a function here that would integrate image_data into your DICOM viewer
+      try:
+        load_images_into_dicom_viewer(image_data, image_type, image_format)
+        print(f"Medical image was successfully added to dicom viewer.")
+      except Exception as e:
+            print(f"Error: medical image could not be loaded into dicom viewer: {e}")
+            return "Error: medical image could not be loaded into dicom viewer."
+
+      # 5. Analyze the DICOM image with the vision model
+       #Note: need to implement a function to call the Vision API
+      analysis_results = await analyze_image_with_vision_api(image_data, image_type, image_format)
+      if not analysis_results:
+             return "Error: Could not analyze the medical imaging."
+
+      # 6. return the analysis result
+      return f"Analysis results: {analysis_results}"
+
+
+    except Exception as e:
+        print (f"Error in fetch_and_analyze_medical_images: {e}")
+        return f"Error during medical imaging fetching and analysis: {e}"
+
+
+async def get_images_from_api(keywords: str, api_key: str = None) -> tuple:
+     # Replace with your actual API calls to download images
+    """
+      Searches and retrieves images from the public API based on the keywords given.
+      Note: This is a placeholder, must be implemented by you.
+    """
+    try:
+        #  API search logic here
+        print(f"placeholder: calling public API with keyword search: {keywords}")
+        # Sample data: placeholder, please remove and replace with actual API call to load images:
+        return b"Sample DICOM Image Bytes", "DICOM", "DICOM format" # sample data, please replace
+    except Exception as e:
+        print(f"Error during image search and retrieval: {e}")
+        return None, None, None
+
+
+def load_images_into_dicom_viewer(image_data: bytes, image_type: str, image_format: str) -> bool:
+    """Loads image data into the dicom viewer. Note, that this must be implemented by you.
+    """
+    print (f"placeholder: loading image into dicom viewer of type: {image_type}, format: {image_format}")
+    return True # placeholder must implement dicom loading function
+      
+async def analyze_image_with_vision_api(image_data: bytes, image_type: str, image_format: str) -> str:
+    """Placeholder that performs analysis of the image using its vision capability and returns a string. Must be implemented by you.
+    """
+    # Perform analysis, returning results in a string.
+      
+    print(f"placeholder: performing analysis of image of type: {image_type}, format: {image_format}")
+    return "Analysis: no abnormalities were found"  # Sample data
 
 # ------------------------------------------------------------------------------
 # Task: receiving messages (JSON or binary) from Gemini and handling them
@@ -408,15 +602,28 @@ async def handle_frontend_connection(websocket):
     finally:
         print("Frontend client disconnected")
 
-# async def start_server():
-#     """Start the WebSocket server for frontend connections."""
-#     print(f"Starting WebSocket server on port {WEB_SERVER_PORT}")
-#     async with serve(handle_frontend_connection, "localhost", WEB_SERVER_PORT):
-        # await asyncio.Future()  # run forever
+
+
+async def start_server():
+    """Start the WebSocket server for frontend connections."""
+    print(f"Starting WebSocket server on port {WEB_SERVER_PORT}")
+    async with serve(handle_frontend_connection, "localhost", WEB_SERVER_PORT):
+        await asyncio.Future()  # run forever
+
+async def process_frontend_messages(websocket):
+    """Process messages from frontend and forward them to Gemini."""
+    try:
+        async for message in websocket:
+            if gemini_websocket and not gemini_websocket.closed:
+                await gemini_websocket.send(message)
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    except Exception as e:
+        print(f"Error processing frontend message: {e}")
 
 if __name__ == "__main__":
     try:
-        asyncio.run(gemini_session())
+        asyncio.run(start_server())
     except KeyboardInterrupt:
         print("\nExiting gracefully...")
     except Exception as e:

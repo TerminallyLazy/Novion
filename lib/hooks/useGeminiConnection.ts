@@ -211,7 +211,6 @@ export function useGeminiConnection(): UseGeminiConnection {
           setIsConnected(true);
           setIsConnecting(false);
           reconnectAttempts.current = 0;
-          
         } else if (data.binary) {
           // Handle base64 encoded PCM audio
           const binaryData = atob(data.binary);
@@ -220,7 +219,7 @@ export function useGeminiConnection(): UseGeminiConnection {
           for (let i = 0; i < binaryData.length; i++) {
             view[i] = binaryData.charCodeAt(i);
           }
-          //geminiEvents.emit('audio', arrayBuffer);
+          geminiEvents.emit('audio', arrayBuffer);
           await queueAudio(arrayBuffer);
         } else if (data.serverContent?.modelTurn?.parts) {
           // Handle text and inline audio responses
@@ -233,12 +232,12 @@ export function useGeminiConnection(): UseGeminiConnection {
               for (let i = 0; i < audioData.length; i++) {
                 view[i] = audioData.charCodeAt(i);
               }
-             // geminiEvents.emit('audio', arrayBuffer);
+              geminiEvents.emit('audio', arrayBuffer);
               await queueAudio(arrayBuffer);
             } else if (part.text) {
               // Handle text responses
               console.log('Gemini text response:', part.text);
-              // geminiEvents.emit('text', part.text);
+              geminiEvents.emit('text', part.text);
             }
           }
         }

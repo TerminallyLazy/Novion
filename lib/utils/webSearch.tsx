@@ -1,5 +1,5 @@
 import { type FunctionDeclaration, SchemaType } from "@google/generative-ai";
-import { useEffect, useRef, useState, memo } from "react";
+import { useEffect, useState, memo, useRef } from "react";
 
 interface Config {
   model: string;
@@ -10,30 +10,43 @@ interface Config {
 }
 
 interface Client {
-  on: (event: string, callback: (toolCall: ToolCall) => void) => void;
-  off: (event: string, callback: (toolCall: ToolCall) => void) => void;
-  sendToolResponse: (response: {
-    functionResponses: Array<{
-      response: { output: { success: boolean } };
-      id: string;
-    }>;
-  }) => void;
+    on: (event: string, callback: (toolCall: ToolCall | any) => void) => void;
+    off: (event: string, callback: (toolCall: ToolCall | any) => void) => void;
+    sendToolResponse: (response: {
+      functionResponses: Array<{
+        response: { output: { success: boolean } };
+        id: string;
+      }>;
+    }) => void;
+  send: (message: string) => void
 }
-
+// use useRef instead of a variable so it does not reset on every render.
+const clientRef = useRef<Client | null>(null);
 const client: Client = {
-  on: (event, callback) => {
-    // Implement event listener logic
-    window.addEventListener(event, callback as any);
-  },
-  off: (event, callback) => {
-    // Implement event removal logic
-    window.removeEventListener(event, callback as any);
-  },
-  sendToolResponse: (response) => {
-    // Implement response sending logic
-    console.log('Sending tool response:', response);
-  }
+    on: (event, callback) => {
+        if (clientRef.current) {
+            window.addEventListener(event, callback as any);
+        }
+    },
+    off: (event, callback) => {
+        if (clientRef.current) {
+        window.removeEventListener(event, callback as any);
+        }
+    },
+    sendToolResponse: (response) => {
+        // Implement response sending logic
+        console.log('Sending tool response:', response);
+      if (clientRef.current) {
+         clientRef.current.send(JSON.stringify(response))
+      }
+      },
+    send: (message) => {
+        if(clientRef.current) {
+            console.log("placeholder: send message to backend via websocket:", message);
+        }
+    }
 };
+
 
 const setConfig = (config: Config) => {
   // Implement configuration setting logic
@@ -49,6 +62,7 @@ interface FunctionCall {
 interface ToolCall {
   functionCalls: FunctionCall[];
 }
+
 
 // Define the function declaration for the tool
 export const declaration: FunctionDeclaration = {
@@ -66,11 +80,71 @@ export const declaration: FunctionDeclaration = {
   },
 };
 
+// Define the function declaration for medical images
+export const medicalImageDeclaration: FunctionDeclaration = {
+    name: "gemini_medical_image_fetch",
+    description: "Fetches and analyzes medical images based on context.",
+    parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+
+         },
+    },
+};
+
+
 // Define the main component
 function GeminiWebSearchComponent() {
   const [responseText, setResponseText] = useState<string>("");
   const [groundingMetadata, setGroundingMetadata] = useState<string>("");
+  const [medicalImageResults, setMedicalImageResults] = useState<string>("");
+  const handleToolCall = (toolCall: ToolCall | any) => {
+    console.log("Received tool call:", toolCall);
+    if (toolCall && toolCall.functionCalls) {
+        const fc = toolCall.functionCalls.find(
+        (fc: { name: string; }) => fc.name === declaration.name
+        );
+        if (fc) {
+            const query = (fc.args as any).query;
+            // Simulate a response (replace this with actual API call handling if needed)
+            const simulatedResponse = `Response for query: ${query}`;
+            const simulatedMetadata = `Metadata for query: ${query}`;
+            setResponseText(simulatedResponse);
+            setGroundingMetadata(simulatedMetadata);
+        }
 
+        const medicalCall = toolCall.functionCalls.find(
+            (fc: { name: string; }) => fc.name === medicalImageDeclaration.name
+           );
+
+           if (medicalCall) {
+            // this is medical call. Do not do simulation
+            setMedicalImageResults("processing image now...");
+           }
+
+           if (toolCall.functionCalls.length) {
+            client.sendToolResponse({
+              functionResponses: toolCall.functionCalls.map((fc: { id: any }) => ({
+                response: { output: { success: true } },
+                id: fc.id,
+              })),
+            });
+          }
+        }
+
+        if (toolCall && toolCall.medical_image_results) {
+          console.log("Received medical image message from python:", toolCall)
+          setMedicalImageResults(toolCall.medical_image_results)
+        } 
+    };
+
+    useEffect(() => {
+        clientRef.current = client;
+        return () => {
+            clientRef.current = null;
+        }
+    }, [])
+    
   useEffect(() => {
     // Configure the Gemini model and tools
     setConfig({
@@ -78,44 +152,22 @@ function GeminiWebSearchComponent() {
       systemInstruction: {
         parts: [
           {
-            text: 'You are my helpful assistant. Use the "gemini_web_search" function to answer queries using web search.',
+            text: 'You are my helpful assistant. Use the "gemini_web_search" function to answer queries using web search. And use the "gemini_medical_image_fetch" function to retrieve and analyze medical images when needed.',
           },
         ],
       },
-      tools: [{ googleSearch: {} }, { functionDeclarations: [declaration] }],
+      tools: [{ googleSearch: {} }, { functionDeclarations: [declaration, medicalImageDeclaration] }],
     });
   }, [setConfig]);
 
   useEffect(() => {
     // Handle tool calls
-    const onToolCall = (toolCall: ToolCall) => {
-      console.log("Received tool call:", toolCall);
-      const fc = toolCall.functionCalls.find(
-        (fc) => fc.name === declaration.name
-      );
-      if (fc) {
-        const query = (fc.args as any).query;
-        // Simulate a response (replace this with actual API call handling if needed)
-        const simulatedResponse = `Response for query: ${query}`;
-        const simulatedMetadata = `Metadata for query: ${query}`;
-        setResponseText(simulatedResponse);
-        setGroundingMetadata(simulatedMetadata);
-      }
-      // Send a success response for the tool call
-      if (toolCall.functionCalls.length) {
-        setTimeout(() =>
-          client.sendToolResponse({
-            functionResponses: toolCall.functionCalls.map((fc) => ({
-              response: { output: { success: true } },
-              id: fc.id,
-            })),
-          })
-        );
-      }
-    };
-    client.on("toolcall", onToolCall);
+    client.on("toolcall", handleToolCall);
+    client.on("message", handleToolCall);
+
     return () => {
-      client.off("toolcall", onToolCall);
+      client.off("toolcall", handleToolCall);
+      client.off("message", handleToolCall);
     };
   }, [client]);
 
@@ -124,8 +176,11 @@ function GeminiWebSearchComponent() {
       <h3>Gemini Web Search</h3>
       <p>Response: {responseText}</p>
       <p>Grounding Metadata: {groundingMetadata}</p>
+     <h3>Medical Imaging</h3>
+      <p>Medical Image Results: {medicalImageResults}</p>
     </div>
   );
 }
 
-export const GeminiWebSearch = memo(GeminiWebSearchComponent);
+export const GeminiWebSearch = memo(GeminiWebSearchComponent)
+
