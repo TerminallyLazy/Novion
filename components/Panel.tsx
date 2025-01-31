@@ -16,14 +16,17 @@ export function Panel({ children, width, className = "" }: PanelProps) {
         "h-full transition-all duration-300 ease-in-out",
         "bg-card/95 backdrop-blur-sm border-border",
         "flex flex-col shadow-lg",
+        "relative z-[100]",
+        "pointer-events-auto",
         className
       )}
       style={{ 
         width: `${width}px`,
-        backdropFilter: 'blur(8px)',
       }}
     >
-      {children}
+      <div className="h-full w-full pointer-events-auto">
+        {children}
+      </div>
     </div>
   );
 } 

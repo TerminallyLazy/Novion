@@ -6,22 +6,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface ToastOptions {
-  title: string;
-  description: string;
-  variant?: 'default' | 'destructive';
-}
-
-export function useToast() {
-  return {
-    toast: ({ title, description, variant = 'default' }: ToastOptions) => {
-      // For now, we'll use console.log as a temporary solution
-      // TODO: Replace with proper toast implementation
-      console.log(`[${variant.toUpperCase()}] ${title}: ${description}`);
-    },
-  };
-}
-
 export function useRealtimeMutation<
   TData = unknown,
   TError = unknown,

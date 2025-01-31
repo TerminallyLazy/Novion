@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useToast, useRealtimeMutation } from "@/lib/utils";
+import { useRealtimeMutation } from "@/lib/utils";
+import { useToast } from "@/lib/use-toast";
 import { apiClient } from "@/lib/api";
+import { MediaControlPanel } from '@/components/MediaControlPanel';
 import type { inferRPCInputType, inferRPCOutputType } from "@/lib/api/index";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { CustomToolButton, CustomToolGroup } from '@/components/CustomToolButton';
 import { Panel } from '@/components/Panel';
-import { Providers } from '@/components/Providers';
+import { Providers, useGemini } from '@/components/Providers';
 import {
   Move,
   Ruler,
@@ -224,7 +226,7 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
         "flex-1 overflow-y-auto transition-all duration-200",
         !isExpanded && "opacity-0"
       )}>
-        <div className="image-details">
+        {/* <div className="image-details">
           <div className="image-detail-row">
             <span className="image-detail-label">Series</span>
             <span className="image-detail-value">CT Chest</span>
@@ -279,7 +281,7 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
           <div className="text-xs text-foreground/60 mt-1">
             Axial slice 45
           </div>
-        </div>
+        </div> */}
 
         <div className="tool-section border-b border-[#e4e7ec] dark:border-[#2D3848]">
           <h3 className="tool-section-title text-[#64748b] dark:text-foreground/60">View</h3>
@@ -467,7 +469,7 @@ function TopToolbar({
   };
 
   return (
-    <div className="h-12 px-4 flex items-center justify-between bg-white dark:bg-[#0a0d13] border-b border-[#e2e8f0] dark:border-[#1b2538]">
+    <div className="h-12 px-4 flex items-center justify-between bg-white dark:bg-[#141a29] border-b border-[#e2e8f0] dark:border-[#1b2538]">
       <div className="top-header-section">
         <button
           className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
@@ -501,7 +503,7 @@ function TopToolbar({
 
       <div className="top-header-section">
         <button
-          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#141a29] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
           aria-label="Toggle theme"
         >
@@ -641,19 +643,36 @@ function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand 
   );
 }
 
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
   const [selectedTab, setSelectedTab] = useState<string>("analysis");
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isEventLogDetached, setIsEventLogDetached] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const { isConnected, sendTextMessage, error } = useGemini();
+
+  const handleSendMessage = async () => {
+    if (!message.trim()) return;
+    try {
+      setMessages(prev => [...prev, { role: 'user', content: message }]);
+      await sendTextMessage(message);
+      setMessage("");
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
-    <Panel
-      className="flex flex-col shadow-md overflow-hidden relative"
-      width={isExpanded ? 320 : 48}
-    >
-      <div className="flex items-center justify-between h-12 px-4 border-b border-[#2D3848]">
+    <div className="h-full flex-items flex-col text-center bg-[#141a29]">
+      <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
         <button
           className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
           onClick={() => onExpandedChange(!isExpanded)}
-          aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
         >
           {isExpanded ? (
             <ChevronRight className="h-4 w-4" />
@@ -661,103 +680,116 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
             <ChevronLeft className="h-4 w-4" />
           )}
         </button>
-        <span className={cn("font-medium truncate text-center w-full", !isExpanded && "opacity-0")}>
+        <span className={cn("font-medium flex-1 text-center", !isExpanded && "opacity-0")}>
           Analysis
         </span>
       </div>
 
       <div className={cn(
-        "flex-1 overflow-y-auto transition-all duration-200",
-        !isExpanded && "opacity-0"
+        "flex-1 overflow-hidden",
+        !isExpanded && "hidden"
       )}>
-        <div className="p-4 space-y-4">
-          <Select defaultValue="study-1">
-            <SelectTrigger className="w-full ">
-              <SelectValue placeholder="Select a study to analyze" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="study-1">Select a study to analyze</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select defaultValue="mammogram">
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Mammogram Analysis" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mammogram">Mammogram Analysis</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-            <TabsList className="grid w-full grid-cols-2 gap-1 p-1 rounded-md">
-              <TabsTrigger 
-                value="analysis" 
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                  "text-foreground/60 hover:text-foreground",
-                  "data-[state=active]:bg-[#4cedff] data-[state=active]:text-[#1b2237]"
-                )}
-              >
-                Analysis
-              </TabsTrigger>
-              <TabsTrigger 
-                value="voice"
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                  "text-foreground/60 hover:text-foreground",
-                  "data-[state=active]:bg-[#4cedff] data-[state=active]:text-[#1b2237]"
-                )}
-              >
-                Voice
-              </TabsTrigger>
+        <div className="h-full p-4">
+          <Tabs defaultValue="analysis">
+            <TabsList className="grid w-full grid-cols-3 gap-1 p-1 rounded-md">
+              <TabsTrigger value="analysis">Analysis</TabsTrigger>
+              <TabsTrigger value="voice">Voice</TabsTrigger>
+              <TabsTrigger value="events">Events</TabsTrigger>
             </TabsList>
 
             <TabsContent value="analysis" className="mt-4">
-              <div className="p-4 bg-[#1b2237] rounded-md">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-medium">AI Analysis</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="bg-[#2D3848] hover:bg-[#374357] border-[#4D5867] text-foreground/80 hover:text-[#4cedff]"
-                  >
-                    <Brain className="h-4 w-4 mr-2" />
-                    Analyze
-                  </Button>
+              <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
+                <div className="flex-1 overflow-y-auto p-4">
+                  {messages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "p-2 rounded-lg max-w-[80%] mb-2",
+                        msg.role === 'user' 
+                          ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
+                          : "bg-[#2D3848] text-foreground/80"
+                      )}
+                    >
+                      {msg.content}
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} />
                 </div>
-                <div className="text-sm text-foreground/60">
-                  No analysis results yet. Click Analyze to begin AI-powered diagnosis assistance.
+                <div className="p-2 border-t border-[#2D3848]">
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="Type a message..."
+                      className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                    />
+                    <button
+                      type="submit"
+                      className="shrink-0 px-4 py-2 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
+                    >
+                      Send
+                    </button>
+                  </form>
                 </div>
               </div>
             </TabsContent>
 
             <TabsContent value="voice" className="mt-4">
-              <div className="p-4 bg-[#1b2237] rounded-md">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-medium">Voice Commands</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="bg-[#2D3848] hover:bg-[#374357] border-[#4D5867] text-foreground/80 hover:text-[#4cedff]"
+              {/* Existing voice content */}
+            </TabsContent>
+
+            <TabsContent value="events" className="mt-4">
+              <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
+                <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                  <span className="text-sm font-medium">Event Log</span>
+                  <button
+                    onClick={() => setIsEventLogDetached(!isEventLogDetached)}
+                    className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
                   >
-                    <Mic className="h-4 w-4 mr-2" />
-                    Start
-                  </Button>
+                    {isEventLogDetached ? "Attach" : "Detach"}
+                  </button>
                 </div>
-                <div className="text-sm text-foreground/60">
-                  Click Start to begin voice command recognition.
+                <div className="flex-1 overflow-y-auto p-4">
+                  {/* Event log content */}
                 </div>
               </div>
             </TabsContent>
           </Tabs>
         </div>
       </div>
-    </Panel>
+    </div>
+  );
+}
+
+function DetachedEventLog({ onAttach }: { onAttach: () => void }) {
+  return (
+    <div className="fixed bottom-32 right-8 w-80 z-50 bg-[#1b2237] rounded-md shadow-lg border border-[#2D3848]">
+      <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+        <span className="text-sm font-medium">Event Log</span>
+        <button
+          onClick={onAttach}
+          className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+        >
+          Attach
+        </button>
+      </div>
+      <div className="h-[300px] overflow-y-auto p-4">
+        {/* Event log content */}
+      </div>
+    </div>
   );
 }
 
 function App() {
+  const [showMediaControls, setShowMediaControls] = useState(true);
+  const [isEventLogDetached, setIsEventLogDetached] = useState(false);
   const [viewportState, setViewportState] = useState<ViewportState>({
     activeViewport: "AXIAL",
     layout: "2x2",
@@ -815,6 +847,10 @@ function App() {
 
   return (
     <div className="medical-viewer w-screen h-screen overflow-hidden">
+      <MediaControlPanel />
+      {isEventLogDetached && (
+        <DetachedEventLog onAttach={() => setIsEventLogDetached(false)} />
+      )}
       {/* Left Panel */}
       <Panel
         className="fixed top-0 bottom-0 left-0 bg-card border-r border-border z-40"
@@ -857,9 +893,11 @@ function App() {
       </div>
 
       {/* Right Panel */}
-      <Panel
-        className="fixed top-0 bottom-0 right-0 bg-card border-l border-border z-40"
-        width={rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH}
+      <div 
+        className="fixed top-0 bottom-0 right-0 z-40 bg-[#141a29] border-l border-[#1b2538] shadow-lg"
+        style={{
+          width: rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH
+        }}
       >
         <RightPanel
           isExpanded={!rightPanelCollapsed}
@@ -867,7 +905,7 @@ function App() {
             setViewportState(prev => ({ ...prev, rightPanelCollapsed: !expanded }))
           }
         />
-      </Panel>
+      </div>
     </div>
   );
 }

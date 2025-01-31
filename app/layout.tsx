@@ -2,8 +2,12 @@
 import "@/styles/globals.css";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/Toaster";
+import { Providers } from "@/components/Providers";
 import { cn } from "@/lib/utils";
+import { validateEnv } from '@/lib/env';
 
+// Validate environment variables at startup
+validateEnv();
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,10 +26,12 @@ export default function RootLayout({
         "min-h-screen bg-background text-foreground",
         "overflow-hidden"
       )}>
-        <main className="h-screen">
-          {children}
-        </main>
-        <Toaster />
+        <Providers>
+          <main className="h-screen">
+            {children}
+          </main>
+          <Toaster />
+        </Providers>
       </body>
     </html>
   );

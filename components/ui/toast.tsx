@@ -3,18 +3,15 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
+import type { Toast as ToastType } from "@/lib/types/toast";
 
-interface ToastProps {
-  title?: string;
-  description?: string;
-  variant?: "default" | "destructive";
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+type ToastProps = ToastType & {
   className?: string;
-}
+  children?: React.ReactNode;
+};
 
 export const Toast = React.forwardRef<HTMLDivElement, ToastProps>(
-  ({ className, title, description, variant = "default", open = true, onOpenChange, ...props }, ref) => {
+  ({ className, title, description, variant = "default", open = true, onOpenChange, children, ...props }, ref) => {
     React.useEffect(() => {
       const timer = setTimeout(() => {
         onOpenChange?.(false);
@@ -39,7 +36,11 @@ export const Toast = React.forwardRef<HTMLDivElement, ToastProps>(
           className
         )}
         {...props}
-      />
+      >
+        <div className="flex flex-col gap-1">
+          {children}
+        </div>
+      </motion.div>
     );
   }
 );

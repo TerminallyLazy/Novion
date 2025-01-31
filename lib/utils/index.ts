@@ -6,32 +6,6 @@
 import { useState } from "react";
 
 /**
- * Minimal Toast Hook Example
- * Use a more robust solution in a real app (e.g., react-hot-toast)
- */
-export function useToast() {
-  function toast({
-    title,
-    description,
-    variant,
-  }: {
-    title: string;
-    description?: string;
-    variant?: "default" | "destructive";
-  }) {
-    // A real implementation would provide a visible
-    // toast notification on the screen
-    if (variant === "destructive") {
-      console.error(`[TOAST ERROR] ${title}: ${description ?? ""}`);
-    } else {
-      console.log(`[TOAST] ${title}: ${description ?? ""}`);
-    }
-  }
-
-  return { toast };
-}
-
-/**
  * Minimal "realtime" mutation hook
  * A skeleton example to illustrate streaming or progressive updates
  */

@@ -6,6 +6,7 @@ import os
 import base64
 import websockets
 from websockets.client import WebSocketClientProtocol
+from websockets.server import serve
 from dotenv import load_dotenv
 import struct
 import wave
@@ -16,6 +17,7 @@ import wave
 load_dotenv()
 
 host = "generativelanguage.googleapis.com"
+WEB_SERVER_PORT = 8080  # Port for the frontend to connect to
 
 # Gemini 2.0 Multimodal Live API endpoint:
 api_key = os.environ["GEMINI_API_KEY"]
@@ -335,6 +337,82 @@ async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
         playback_stream.stop_stream()
         playback_stream.close()
         pa.terminate()
+
+async def handle_frontend_connection(websocket):
+    """Handle WebSocket connections from the frontend."""
+    print(f"Frontend client connected")
+    try:
+        async with websockets.connect(uri) as gemini_ws:
+            # Send setup message to Gemini
+            await gemini_ws.send(json.dumps(setup_message))
+            print("Sent setup message to Gemini")
+
+            # Wait for setup completion
+            while True:
+                init_resp = await gemini_ws.recv()
+                try:
+                    if isinstance(init_resp, bytes):
+                        init_resp = init_resp.decode('utf-8')
+                    data = json.loads(init_resp)
+                    if "setupComplete" in data:
+                        await websocket.send(json.dumps({"status": "connected"}))
+                        break
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    print(f"Error parsing setup message: {e}")
+                    continue
+
+            # Handle messages between frontend and Gemini
+            async def forward_to_gemini():
+                try:
+                    async for message in websocket:
+                        await gemini_ws.send(message)
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+
+            async def forward_to_frontend():
+                try:
+                    async for message in gemini_ws:
+                        if isinstance(message, bytes):
+                            try:
+                                # Try to decode bytes as UTF-8 JSON
+                                message = message.decode('utf-8')
+                                data = json.loads(message)
+                                await websocket.send(json.dumps(data))
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                # If not valid JSON, send as base64 encoded binary
+                                await websocket.send(json.dumps({
+                                    "binary": base64.b64encode(message).decode('utf-8')
+                                }))
+                        else:
+                            # Regular JSON message
+                            try:
+                                data = json.loads(message)
+                                await websocket.send(json.dumps(data))
+                            except json.JSONDecodeError as e:
+                                print(f"Error parsing message: {e}")
+                                continue
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+
+            await asyncio.gather(
+                forward_to_gemini(),
+                forward_to_frontend()
+            )
+
+    except Exception as e:
+        print(f"Error in connection handler: {e}")
+        try:
+            await websocket.send(json.dumps({"error": str(e)}))
+        except:
+            pass
+    finally:
+        print("Frontend client disconnected")
+
+# async def start_server():
+#     """Start the WebSocket server for frontend connections."""
+#     print(f"Starting WebSocket server on port {WEB_SERVER_PORT}")
+#     async with serve(handle_frontend_connection, "localhost", WEB_SERVER_PORT):
+        # await asyncio.Future()  # run forever
 
 if __name__ == "__main__":
     try:

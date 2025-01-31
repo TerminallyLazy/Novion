@@ -1,24 +1,9 @@
 "use client";
 
 import * as React from "react";
-import {
-  Toast,
-  ToastTitle,
-  ToastDescription,
-  ToastProvider,
-  ToastViewport,
-} from "@/components/ui/toast";
+import type { Toast, ToasterToast } from "./types/toast";
 
 const TOAST_REMOVE_DELAY = 1000;
-
-type ToasterToast = {
-  id: string;
-  title?: string;
-  description?: string;
-  variant?: "default" | "destructive";
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-};
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -141,8 +126,6 @@ function dispatch(action: Action) {
     listener(memoryState);
   });
 }
-
-type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
   const id = genId();
