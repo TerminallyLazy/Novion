@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type DropzoneProps } from 'react-dropzone';
 import { Upload, X, FileImage, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,7 +36,7 @@ export function ImageSeriesUpload({
     }
   }, [onUploadComplete]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const dropzoneOptions: DropzoneProps = {
     onDrop,
     maxFiles,
     multiple: true,
@@ -44,8 +44,13 @@ export function ImageSeriesUpload({
       'application/dicom': ['.dcm', '.DCM'],
       'image/dicom': ['.dcm', '.DCM'],
       'image/png': ['.png', '.PNG']
-    }
-  } as any); // Temporary type assertion to fix build
+    },
+    onDragEnter: undefined,
+    onDragOver: undefined,
+    onDragLeave: undefined
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone(dropzoneOptions);
 
   const removeFile = (index: number) => {
     const newFiles = [...uploadedFiles];
@@ -65,7 +70,7 @@ export function ImageSeriesUpload({
             : "border-[#2D3848] hover:border-[#4cedff]/50"
         )}
       >
-        <input {...getInputProps()} />
+        <input {...(getInputProps() as any)} />
         <div className="flex flex-col items-center gap-2">
           <Upload className="h-8 w-8 text-[#4cedff]" />
           <p className="text-sm text-foreground/80">
