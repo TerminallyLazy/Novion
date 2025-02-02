@@ -1,20 +1,15 @@
 "use client";
 
 import React, { useEffect, useRef } from 'react';
-import * as cornerstone from 'cornerstone-core';
-import * as cornerstoneTools from 'cornerstone-tools';
-import * as cornerstoneMath from 'cornerstone-math';
-import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
-import dicomParser from 'dicom-parser';
-import Hammer from 'hammerjs';
 import { Maximize2, Minimize2 } from 'lucide-react';
-
-// Initialize external dependencies
-cornerstoneTools.external.cornerstone = cornerstone;
-cornerstoneTools.external.cornerstoneMath = cornerstoneMath;
-cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
-cornerstoneTools.external.Hammer = Hammer;
+import { 
+  initializeCornerstone, 
+  loadAndCacheImage, 
+  displayImage, 
+  enableElement, 
+  disableElement,
+  setActiveTools
+} from '@/lib/utils/cornerstoneInit';
 
 interface DicomViewerProps {
   imageId?: string;
@@ -23,6 +18,7 @@ interface DicomViewerProps {
   isExpanded?: boolean;
   onActivate?: () => void;
   onToggleExpand?: () => void;
+  onImageLoaded?: (success: boolean) => void;
 }
 
 export function DicomViewer({ 
@@ -31,37 +27,27 @@ export function DicomViewer({
   isActive,
   isExpanded,
   onActivate,
-  onToggleExpand 
+  onToggleExpand,
+  onImageLoaded 
 }: DicomViewerProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [isEnabled, setIsEnabled] = React.useState(false);
+
+  // Initialize cornerstone on mount
+  useEffect(() => {
+    initializeCornerstone();
+  }, []);
 
   useEffect(() => {
     if (!elementRef.current) return;
 
     // Enable the element for cornerstone
-    cornerstone.enable(elementRef.current);
+    enableElement(elementRef.current);
     setIsEnabled(true);
-
-    // Initialize tools
-    cornerstoneTools.init({
-      mouseEnabled: true,
-      touchEnabled: true,
-      globalToolSyncEnabled: true,
-      showSVGCursors: true
-    });
-
-    // Add tools we want to use
-    cornerstoneTools.addTool(cornerstoneTools.PanTool);
-    cornerstoneTools.addTool(cornerstoneTools.ZoomTool);
-    cornerstoneTools.addTool(cornerstoneTools.WwwcTool);
-    cornerstoneTools.addTool(cornerstoneTools.LengthTool);
-    cornerstoneTools.addTool(cornerstoneTools.RectangleRoiTool);
-    cornerstoneTools.addTool(cornerstoneTools.AngleTool);
 
     return () => {
       if (elementRef.current) {
-        cornerstone.disable(elementRef.current);
+        disableElement(elementRef.current);
       }
     };
   }, []);
@@ -69,14 +55,24 @@ export function DicomViewer({
   useEffect(() => {
     if (!elementRef.current || !isEnabled || !imageId) return;
 
-    // Load and display the image
-    cornerstone.loadImage(imageId).then(image => {
-      cornerstone.displayImage(elementRef.current!, image);
-      
-      // Set the default tool
-      cornerstoneTools.setToolActive('Pan', { mouseButtonMask: 1 });
-    });
-  }, [imageId, isEnabled]);
+    const loadAndDisplayImage = async () => {
+      try {
+        // Load and display the image
+        const image = await loadAndCacheImage(imageId);
+        displayImage(elementRef.current!, image);
+        
+        // Set the default tool
+        setActiveTools('Pan');
+        
+        onImageLoaded?.(true);
+      } catch (error) {
+        console.error('Error loading image:', error);
+        onImageLoaded?.(false);
+      }
+    };
+
+    loadAndDisplayImage();
+  }, [imageId, isEnabled, onImageLoaded]);
 
   return (
     <div 

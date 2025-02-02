@@ -4,47 +4,55 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Toast as ToastType } from "@/lib/types/toast";
+import { useEffect } from 'react';
+import { useToast, type Toast } from '@/components/ui/use-toast';
 
-type ToastProps = ToastType & {
-  className?: string;
-  children?: React.ReactNode;
-};
+export interface ToastProps {
+  id: string;
+  title: string;
+  description?: string;
+  variant?: 'default' | 'destructive';
+  onDismiss: (id: string) => void;
+}
 
-export const Toast = React.forwardRef<HTMLDivElement, ToastProps>(
-  ({ className, title, description, variant = "default", open = true, onOpenChange, children, ...props }, ref) => {
-    React.useEffect(() => {
-      const timer = setTimeout(() => {
-        onOpenChange?.(false);
-      }, 5000);
+export function Toast({ id, title, description, variant = 'default', onDismiss }: ToastProps) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onDismiss(id);
+    }, 5000);
 
-      return () => clearTimeout(timer);
-    }, [onOpenChange]);
+    return () => clearTimeout(timer);
+  }, [id, onDismiss]);
 
-    if (!open) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      className={`
+        fixed bottom-4 right-4 p-4 rounded-lg shadow-lg
+        transition-colors duration-200
+        ${variant === 'destructive' ? 'bg-red-500 text-white' : 'bg-white text-gray-900'}
+      `}
+      onClick={() => onDismiss(id)}
+    >
+      <div className="font-semibold">{title}</div>
+      {description && (
+        <div className="text-sm mt-1">{description}</div>
+      )}
+    </motion.div>
+  );
+}
 
-    return (
-      <motion.div
-        ref={ref}
-        initial={{ opacity: 0, y: 50, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className={cn(
-          "pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all",
-          variant === "destructive" 
-            ? "border-red-600/40 bg-red-600/10 text-red-600" 
-            : "border-border bg-background text-foreground",
-          className
-        )}
-        {...props}
-      >
-        <div className="flex flex-col gap-1">
-          {children}
-        </div>
-      </motion.div>
-    );
-  }
-);
-Toast.displayName = "Toast";
+export function Toaster({ toasts, onDismiss }: { toasts: ToastProps[]; onDismiss: (id: string) => void }) {
+  return (
+    <AnimatePresence>
+      {toasts.map(toast => (
+        <Toast key={toast.id} {...toast} onDismiss={onDismiss} />
+      ))}
+    </AnimatePresence>
+  );
+}
 
 export const ToastTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (

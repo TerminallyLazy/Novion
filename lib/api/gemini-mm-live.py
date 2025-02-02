@@ -5,12 +5,19 @@ import threading
 import os
 import base64
 import websockets
+import httpx
 from websockets.client import WebSocketClientProtocol
 from websockets.server import serve
 from dotenv import load_dotenv
 import struct
 import wave
+import PIL
+import mss
 import requests 
+from google import genai
+from PIL import Image
+from io import BytesIO
+# from google.generativeai import WebSocketDisconnect
 
 # ------------------------------------------------------------------------------
 # ENV and constants
@@ -135,67 +142,120 @@ def build_text_message(user_input: str) -> str:
 #------------------------------------------------------------------------------
 # Main session
 # ------------------------------------------------------------------------------
-async def gemini_session():
-    """
-    Opens a WebSocket connection with the Gemini server and maintains it until explicitly disconnected.
-    """
-    global gemini_websocket, mic_muted, isConnected
-
+async def gemini_session(websocket):
+    global isConnected
+    isConnected = True
+    
     try:
-        async with websockets.connect(uri) as websocket:
-            gemini_websocket = websocket
-            isConnected = True
-            print("Connected to Gemini API")
-
-            # Send setup message and wait for completion
-            await websocket.send(json.dumps(setup_message))
-            
-            while True:
-                try:
-                    message = await websocket.recv()
-                    # Process messages but don't auto-disconnect
-                    if isinstance(message, str):
-                        data = json.loads(message)
-                        if "error" in data:
-                            print(f"Gemini error: {data['error']}")
-                            continue
+        model = genai.GenerativeModel('gemini-2.0-flash-exp',
+            tools=[
+                {
+                    "name": "searchMedicalImages",
+                    "description": "Search for medical images in the NIH Open-I database",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query for finding medical images"
+                            },
+                            "n": {
+                                "type": "number",
+                                "description": "Start index (1-based)"
+                            },
+                            "m": {
+                                "type": "number",
+                                "description": "End index"
+                            },
+                            "at": {
+                                "type": "string",
+                                "description": "Article type filter"
+                            },
+                            "coll": {
+                                "type": "string",
+                                "description": "Collection filter"
+                            },
+                            "favor": {
+                                "type": "string",
+                                "description": "Rank by preference"
+                            },
+                            "fields": {
+                                "type": "string",
+                                "description": "Fields to search in"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "loadImageSeries",
+                    "description": "Load and display an image series in the appropriate viewer (DICOM, image, or video)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "imgId": {
+                                "type": "string",
+                                "description": "The ID of the image series to load"
+                            },
+                            "type": {
+                                "type": "string",
+                                "description": "The type of viewer to use (dicom, image, or video)",
+                                "enum": ["dicom", "image", "video"]
+                            },
+                            "viewerId": {
+                                "type": "string",
+                                "description": "Optional ID of the specific viewer to load the series into"
+                            }
+                        },
+                        "required": ["imgId"]
+                    }
+                }
+            ]
+        )
+        
+        chat = model.start_chat(history=[])
+        
+        while isConnected:
+            try:
+                message = await websocket.receive_text()
+                response = chat.send_message(message)
+                
+                if response.candidates[0].content.parts[0].function_call:
+                    function_call = response.candidates[0].content.parts[0].function_call
+                    result = None
                     
-                    # Forward message to frontend
-                    for frontend_ws in frontend_websockets:
-                        try:
-                            await frontend_ws.send(message if isinstance(message, str) else message.decode())
-                        except:
-                            pass
-                            
-                except websockets.exceptions.ConnectionClosed:
-                    break
+                    if function_call.name == "searchMedicalImages":
+                        result = await websocket.send_json({
+                            "type": "tool_call",
+                            "name": "searchMedicalImages",
+                            "args": function_call.args
+                        })
+                    elif function_call.name == "loadImageSeries":
+                        result = await websocket.send_json({
+                            "type": "tool_call",
+                            "name": "loadImageSeries",
+                            "args": function_call.args
+                        })
                     
+                    if result:
+                        response = chat.send_message(result)
+                
+                # Send the final response back to the frontend
+                await websocket.send_text(response.text)
+                
+            except WebSocketDisconnect:
+                isConnected = False
+                break
+            except Exception as e:
+                print(f"Error in gemini_session: {str(e)}")
+                await websocket.send_text(f"Error: {str(e)}")
+                
     except Exception as e:
-        print(f"Gemini session error: {e}")
+        print(f"Error in gemini_session: {str(e)}")
+        if isConnected:
+            await websocket.send_text(f"Error: {str(e)}")
     finally:
         isConnected = False
-        gemini_websocket = None
-        print("Session ended")
-
-
-# def build_audio_chunk_message(chunk: bytes) -> str:
-#     """
-#     Encapsulate a chunk of PCM audio in base64 inside
-#     BidiGenerateContentRealtimeInput, so Gemini can perform
-#     speech recognition via VAD. 
-#     """
-#     b64_data = base64.b64encode(chunk).decode("utf-8")
-#     msg = {
-#         "realtime_input": {
-#             "media_chunks": [
-#                 {
-#                     "data": b64_data,
-#                     "mime_type": "audio/pcm"
-#                 }
-#             ]
-#         }
-#     }
-#     return json.dumps(msg)
 
 
 def build_audio_chunk_message(chunk: bytes) -> str:
@@ -228,58 +288,6 @@ def build_audio_chunk_message(chunk: bytes) -> str:
     return json.dumps(msg)
 
 
-
-# async def gemini_session():
-#     """
-#     Opens a WebSocket connection with the Gemini server, sends the setup,
-#     waits for BidiGenerateContentSetupComplete, then concurrently handles:
-#       - reading microphone input and sending it to Gemini
-#       - reading user text input from console
-#       - receiving both text and audio from Gemini
-#       - playing back audio at 24k
-#     """
-    
-#     async with websockets.connect(
-#         uri
-#     ) as websocket:
-        
-#         await websocket.send(json.dumps(setup_message))
-#         print("Sent BidiGenerateContentSetup. Waiting for 'BidiGenerateContentSetupComplete'...")
-        
-#         while True:
-#             init_resp = await websocket.recv()
-
-#             try:
-#                 data = json.loads(init_resp)
-#             except json.JSONDecodeError:
-             
-#                 print("Unexpected non-JSON response before setup complete.")
-#                 continue
-         
-#             if "setupComplete" in data:
-#                 print("Gemini: Setup complete. You may now speak or type. Type 'exit' to quit.\n")
-#                 break
-#             else:
-#                 # Could be an error or some other message.
-#                 print("Received unexpected message during setup:", data)
-
-#         # ----------------------------------------------------------------------
-#         loop = asyncio.get_event_loop()
-#         mic_task = loop.create_task(audio_capture_task(websocket))
-#         text_task = loop.create_task(text_input_task(websocket))
-#         receive_task = loop.create_task(receive_from_gemini(websocket))
-
-#         done, pending = await asyncio.wait(
-#             [mic_task, text_task, receive_task],
-#             return_when=asyncio.FIRST_COMPLETED
-#         )
-
-#         for task in pending:
-#             task.cancel()
-
-#         if not websocket.closed:
-#             await websocket.close()
-#         print("Session closed.")
 
 # ------------------------------------------------------------------------------
 # Task: capturing audio from the microphone at 16 kHz and sending to Gemini
@@ -359,7 +367,7 @@ def perform_web_search(query):
 # ------------------------------------------------------------------------------
 async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str = None) -> str:
     """
-    Fetches medical imaging data from a public API, analyzes it,
+    Fetches medical imaging data from a public API, analyzes it using Gemini,
     and returns analysis result as a text string.
 
     Args:
@@ -370,64 +378,135 @@ async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str =
         str: Textual analysis result or an error message.
     """
     try:
-      # 1. Identify if images are needed via the model's response
-      if "I need to see" not in gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "").lower():
-          return "No medical imaging was needed"
+        # 1. Identify if images are needed via the model's response
+        if "I need to see" not in gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "").lower():
+            return "No medical imaging was needed"
 
-      # 2. Get the search terms from Gemini's response
-      search_terms = gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "")
-      if not search_terms:
-           return "Error: could not extract search terms from gemini response."
-        
-       #  Extract keywords from the search terms:
-      keywords = search_terms.replace("I need to see","").replace("chest x-ray","").strip()
+        # 2. Get the search terms from Gemini's response
+        search_terms = gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "")
+        if not search_terms:
+            return "Error: could not extract search terms from gemini response."
+            
+        # Extract keywords from the search terms:
+        keywords = search_terms.replace("I need to see","").replace("chest x-ray","").strip()
 
-      # 3. Search for images via a medical image API
-      # Note: Need to implement a function to call and retrieve images from public api.
-      # Please replace <call public api to search and download images with function call here>
-
-      image_data, image_type, image_format = await get_images_from_api(keywords, api_key)
-
-      if not image_data:
+        # 3. Search for and retrieve images
+        image_data, image_type, image_format = await get_images_from_api(keywords, api_key)
+        if not image_data:
             return "Error: no medical imaging images were found."
 
-      #4. Load the DICOM Image into my app's dicom viewer.
-       # Note, implement a function here that would integrate image_data into your DICOM viewer
-      try:
-        load_images_into_dicom_viewer(image_data, image_type, image_format)
-        print(f"Medical image was successfully added to dicom viewer.")
-      except Exception as e:
-            print(f"Error: medical image could not be loaded into dicom viewer: {e}")
-            return "Error: medical image could not be loaded into dicom viewer."
+        # 4. Convert image data to base64 for Gemini
+        try:
+            image_b64 = base64.b64encode(image_data).decode('utf-8')
+        except Exception as e:
+            print(f"Error encoding image to base64: {e}")
+            return "Error: Could not encode image for analysis."
 
-      # 5. Analyze the DICOM image with the vision model
-       #Note: need to implement a function to call the Vision API
-      analysis_results = await analyze_image_with_vision_api(image_data, image_type, image_format)
-      if not analysis_results:
-             return "Error: Could not analyze the medical imaging."
+        # 5. Initialize Gemini model for image analysis
+        try:
+            model = genai.GenerativeModel('gemini-1.5-pro')
+            
+            # Prepare the image and prompt for analysis
+            prompt = "Please analyze this medical image and describe any notable findings, abnormalities, or areas of concern. Be specific and thorough in your analysis."
+            
+            # Generate content with the image and prompt
+            response = model.generate_content([
+                {'mime_type': f'image/{image_format.lower()}', 'data': image_b64},
+                prompt
+            ])
+            
+            analysis_results = response.text
+            
+            # 6. Load the image into the DICOM viewer if applicable
+            try:
+                load_images_into_dicom_viewer(image_data, image_type, image_format)
+                print(f"Medical image was successfully added to dicom viewer.")
+            except Exception as e:
+                print(f"Warning: Could not load image into DICOM viewer: {e}")
+                # Continue with analysis even if viewer loading fails
+            
+            return f"Analysis results: {analysis_results}"
 
-      # 6. return the analysis result
-      return f"Analysis results: {analysis_results}"
-
+        except Exception as e:
+            print(f"Error during Gemini image analysis: {e}")
+            return f"Error: Could not analyze the medical imaging with Gemini: {e}"
 
     except Exception as e:
-        print (f"Error in fetch_and_analyze_medical_images: {e}")
+        print(f"Error in fetch_and_analyze_medical_images: {e}")
         return f"Error during medical imaging fetching and analysis: {e}"
 
 
 async def get_images_from_api(keywords: str, api_key: str = None) -> tuple:
-     # Replace with your actual API calls to download images
     """
-      Searches and retrieves images from the public API based on the keywords given.
-      Note: This is a placeholder, must be implemented by you.
+    Searches and retrieves images from the NIH Open-i API based on the keywords given.
+    Returns a tuple of (image_data, image_type, image_format)
+    
+    API Documentation: https://openi.nlm.nih.gov/api
     """
     try:
-        #  API search logic here
-        print(f"placeholder: calling public API with keyword search: {keywords}")
-        # Sample data: placeholder, please remove and replace with actual API call to load images:
-        return b"Sample DICOM Image Bytes", "DICOM", "DICOM format" # sample data, please replace
+        # Use httpx for async HTTP requests
+        async with httpx.AsyncClient() as client:
+            # NIH Open-i API base endpoint
+            base_url = "https://openi.nlm.nih.gov/api/search"
+            
+            # Construct query parameters
+            params = {
+                'query': keywords,      # Main search term
+                'n': '1',              # Start index
+                'm': '10',             # End index (retrieve up to 10 results)
+                'it': 'x,p,m',         # Image types: x-ray, photograph, medical image
+                'coll': 'pmc,iu,mca',  # Collections: PubMed Central, Indiana Univ, MCA
+                'fields': 't,a,msh',   # Search in title, abstract, MeSH terms
+            }
+            
+            # Make the initial search request
+            response = await client.get(base_url, params=params)
+            response.raise_for_status()
+            search_results = response.json()
+            
+            # Check if we have any results
+            if not search_results or 'list' not in search_results:
+                print("No images found in search results")
+                return None, None, None
+                
+            # Get the first image result
+            for result in search_results['list']:
+                if 'imgLarge' in result:
+                    image_url = result['imgLarge']
+                elif 'imgThumb' in result:
+                    image_url = result['imgThumb']
+                else:
+                    continue
+                    
+                # Fetch the actual image
+                img_response = await client.get(image_url)
+                img_response.raise_for_status()
+                image_data = img_response.content
+                
+                # Use PIL to validate and get image format
+                try:
+                    image = Image.open(BytesIO(image_data))
+                    image_format = image.format  # Returns 'JPEG', 'PNG', etc.
+                    image_type = image.mode     # Returns 'RGB', 'RGBA', etc.
+                    
+                    # Convert image to bytes if needed
+                    if not isinstance(image_data, bytes):
+                        buffer = BytesIO()
+                        image.save(buffer, format=image_format)
+                        image_data = buffer.getvalue()
+                    
+                    return image_data, image_type, image_format.lower()
+                    
+                except Exception as e:
+                    print(f"Error processing image with PIL: {e}")
+                    continue
+            
+            # If we get here, we didn't find any valid images
+            print("No valid images found in search results")
+            return None, None, None
+            
     except Exception as e:
-        print(f"Error during image search and retrieval: {e}")
+        print(f"Error retrieving image from NIH Open-i API: {e}")
         return None, None, None
 
 

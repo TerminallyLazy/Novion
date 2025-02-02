@@ -48,7 +48,7 @@ export function CustomToolButton({
       {showTooltip && (
         <div 
           className={cn(
-            'absolute left-0 transform -translate-x-full -translate-y-1/2 top-1/2 px-3 py-1.5 ml-2',
+            'absolute bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 px-3 py-1.5 mb-2',
             'bg-card/95 backdrop-blur-sm border shadow-md rounded-md z-50',
             'text-sm font-medium text-foreground whitespace-nowrap'
           )}
@@ -56,12 +56,12 @@ export function CustomToolButton({
         >
           {label}
           <div 
-            className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 rotate-45"
+            className="absolute left-1/2 top-full transform -translate-x-1/2 -translate-y-1/2 rotate-45"
             style={{
               width: '8px',
               height: '8px',
               backgroundColor: 'var(--card)',
-              borderTop: '1px solid var(--border)',
+              borderBottom: '1px solid var(--border)',
               borderRight: '1px solid var(--border)',
             }}
           />

@@ -37,6 +37,10 @@ declare module 'cornerstone-wado-image-loader' {
     cornerstone: any;
     dicomParser: any;
   };
+
+  export function configure(arg0: { beforeSend: (xhr: XMLHttpRequest) => void; }) {
+    throw new Error("Function not implemented.");
+  }
 }
 
 declare module 'dicom-parser' {

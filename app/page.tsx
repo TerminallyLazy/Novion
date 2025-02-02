@@ -6,7 +6,7 @@ import { useToast } from "@/lib/use-toast";
 import { apiClient } from "@/lib/api";
 import { MediaControlPanel } from '@/components/MediaControlPanel';
 import type { inferRPCInputType, inferRPCOutputType } from "@/lib/api/index";
-import React, { useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { CustomToolButton, CustomToolGroup } from '@/components/CustomToolButton';
 import { Panel } from '@/components/Panel';
 import { Providers, useGemini } from '@/components/Providers';
@@ -49,6 +49,15 @@ import { Card, CardBody } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { DicomViewer } from '@/components/DicomViewer';
 import Image from 'next/image';
+import { ImageSeriesUpload } from '@/components/ImageSeriesUpload';
+import { processImageSeries, uploadImageSeries, cleanupImageSeries, type ImageSeries } from '@/lib/services/imageUploadService';
+import { Toast, Toaster, type ToastProps } from '@/components/ui/toast';
+import * as cornerstone from 'cornerstone-core';
+import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
+import { 
+  initializeCornerstone, 
+  loadAndCacheImage
+} from '@/lib/utils/cornerstoneInit';
 
 // Add type declarations for the Web Speech API
 interface SpeechGrammar {
@@ -141,7 +150,7 @@ declare global {
 }
 
 // Viewport types
-type ViewportLayout = "1x1" | "2x2" | "3x1";
+type ViewportLayout = "1x1" | "2x2" | "3x3";
 type ViewportType = "AXIAL" | "SAGITTAL" | "CORONAL";
 
 // Tool types
@@ -169,6 +178,40 @@ type AIResult = {
   segmentation?: string;
 };
 
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ImageAnalysis {
+  description: string;
+  findings: string[];
+  measurements?: {
+    width?: number;
+    height?: number;
+    aspectRatio?: number;
+    density?: number;
+  };
+  abnormalities?: string[];
+}
+
+interface LoadedImage {
+  localUrl: string;
+  analysis: ImageAnalysis | null | undefined;
+  metadata?: {
+    modality?: string;
+    studyDate?: string;
+    seriesNumber?: string;
+    instanceNumber?: string;
+    dimensions?: {
+      width: number;
+      height: number;
+    };
+  };
+  imageId: string;
+  file?: File;
+}
+
 interface ViewportState {
   activeViewport: ViewportType;
   layout: ViewportLayout;
@@ -176,6 +219,8 @@ interface ViewportState {
   rightPanelCollapsed: boolean;
   expandedViewport: ViewportType | null;
   theme: 'light' | 'dark';
+  loadedImages?: LoadedImage[];
+  currentImageIndex: number;
 }
 
 interface ToolbarProps {
@@ -404,9 +449,9 @@ function TopToolbar({
         onLayoutChange("2x2");
         break;
       case "2x2":
-        onLayoutChange("3x1");
+        onLayoutChange("3x3");
         break;
-      case "3x1":
+      case "3x3":
         onLayoutChange("1x1");
         break;
     }
@@ -482,6 +527,8 @@ interface ViewportGridProps {
   expandedViewport: ViewportType | null;
   onViewportChange: (viewport: ViewportType) => void;
   onViewportExpand: (viewport: ViewportType) => void;
+  loadedImages?: LoadedImage[];
+  currentImageIndex: number;
 }
 
 function ViewportGrid({ 
@@ -489,12 +536,14 @@ function ViewportGrid({
   activeViewport, 
   expandedViewport,
   onViewportChange,
-  onViewportExpand 
+  onViewportExpand,
+  loadedImages,
+  currentImageIndex
 }: ViewportGridProps) {
   const gridConfig = {
     "1x1": "grid-cols-1",
     "2x2": "grid-cols-2 grid-rows-2",
-    "3x1": "grid-cols-3",
+    "3x3": "grid-cols-3",
   };
 
   return (
@@ -509,8 +558,10 @@ function ViewportGrid({
           isExpanded={expandedViewport === "AXIAL"}
           onActivate={() => onViewportChange("AXIAL")}
           onToggleExpand={() => onViewportExpand("AXIAL")}
+          loadedImages={loadedImages}
+          currentImageIndex={currentImageIndex}
         />
-        {(layout === "2x2" || layout === "3x1") && (
+        {(layout === "2x2" || layout === "3x3") && (
           <>
             <ViewportPanel
               type="SAGITTAL"
@@ -518,6 +569,8 @@ function ViewportGrid({
               isExpanded={expandedViewport === "SAGITTAL"}
               onActivate={() => onViewportChange("SAGITTAL")}
               onToggleExpand={() => onViewportExpand("SAGITTAL")}
+              loadedImages={loadedImages}
+              currentImageIndex={currentImageIndex}
             />
             <ViewportPanel
               type="CORONAL"
@@ -525,6 +578,8 @@ function ViewportGrid({
               isExpanded={expandedViewport === "CORONAL"}
               onActivate={() => onViewportChange("CORONAL")}
               onToggleExpand={() => onViewportExpand("CORONAL")}
+              loadedImages={loadedImages}
+              currentImageIndex={currentImageIndex}
             />
           </>
         )}
@@ -537,63 +592,9 @@ function ViewportGrid({
             isExpanded={true}
             onActivate={() => {}}
             onToggleExpand={() => onViewportExpand(expandedViewport)}
+            loadedImages={loadedImages}
+            currentImageIndex={currentImageIndex}
           />
-        </div>
-      )}
-
-      {/* Expanded Chat Modal */}
-      {isChatExpanded && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-          <div className="bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-4 w-[800px] h-[600px] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-medium">AI Chat</span>
-              <button
-                onClick={() => setIsChatExpanded(false)}
-                className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 bg-[#161d2f] rounded-md p-4 overflow-y-auto">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "p-3 rounded-lg max-w-[80%] mb-3",
-                    msg.role === 'user' 
-                      ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-                      : "bg-[#2D3848] text-foreground/80"
-                  )}
-                >
-                  {msg.content}
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-            <div className="mt-4">
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendMessage();
-                }}
-                className="flex gap-2"
-              >
-                <input
-                  type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type a message..."
-                  className="min-w-0 flex-1 px-4 py-3 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
-                />
-                <button
-                  type="submit"
-                  className="shrink-0 px-6 py-3 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
-                >
-                  Send
-                </button>
-              </form>
-            </div>
-          </div>
         </div>
       )}
     </div>
@@ -606,9 +607,35 @@ interface ViewportPanelProps {
   isExpanded: boolean;
   onActivate: () => void;
   onToggleExpand: () => void;
+  loadedImages?: LoadedImage[];
+  currentImageIndex: number;
 }
 
-function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand }: ViewportPanelProps) {
+function ViewportPanel({ 
+  type, 
+  isActive, 
+  isExpanded, 
+  onActivate, 
+  onToggleExpand,
+  loadedImages,
+  currentImageIndex
+}: ViewportPanelProps) {
+  const [loadError, setLoadError] = useState<string>();
+  //const { loadedImages, currentImageIndex } = viewportState;
+
+  const currentImageId = useMemo(() => {
+    if (!loadedImages || loadedImages.length === 0) return undefined;
+    return loadedImages[currentImageIndex]?.imageId;
+  }, [loadedImages, currentImageIndex]);
+
+  const handleImageLoaded = useCallback((success: boolean) => {
+    if (!success) {
+      setLoadError('Failed to load image');
+    } else {
+      setLoadError(undefined);
+    }
+  }, []);
+
   return (
     <div 
       className={cn(
@@ -623,13 +650,22 @@ function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand 
       onClick={onActivate}
     >
       <DicomViewer
+        imageId={currentImageId}
         viewportType={type}
         isActive={isActive}
+        isExpanded={isExpanded}
         onActivate={onActivate}
+        onToggleExpand={onToggleExpand}
+        onImageLoaded={handleImageLoaded}
       />
       <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded bg-[#161d2f]/80 text-foreground/80 backdrop-blur-sm">
         {type}
       </div>
+      {loadError && (
+        <div className="absolute bottom-2 left-2 px-2 py-1 text-xs font-medium rounded bg-red-500/80 text-white backdrop-blur-sm">
+          {loadError}
+        </div>
+      )}
       <button
         className="absolute top-2 right-2 p-1.5 rounded-md bg-[#161d2f]/80 hover:bg-[#1f2642] text-foreground/80 hover:text-[#4cedff] transition-colors shadow-md backdrop-blur-sm"
         onClick={(e) => {
@@ -643,84 +679,182 @@ function ViewportPanel({ type, isActive, isExpanded, onActivate, onToggleExpand 
   );
 }
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
+function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportState }: ToolbarProps & { viewportState: ViewportState, setViewportState: React.Dispatch<React.SetStateAction<ViewportState>> }): JSX.Element {
   const [selectedTab, setSelectedTab] = useState<string>("analysis");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isEventLogDetached, setIsEventLogDetached] = useState(false);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { isConnected, sendTextMessage, error } = useGemini();
+  const { toast } = useToast();
+  const [currentSeries, setCurrentSeries] = useState<ImageSeries | null>(null);
+  const [toasts, setToasts] = useState<Omit<ToastProps, 'onDismiss'>[]>([]);
 
-  // Add auto-scroll effect
+  // Cleanup function for when component unmounts or series changes
+  useEffect(() => {
+    return () => {
+      if (currentSeries) {
+        cleanupImageSeries(currentSeries);
+      }
+    };
+  }, [currentSeries]);
+
+  const showToast = useCallback(({ title, description, variant = 'default' }: Omit<ToastProps, 'id' | 'onDismiss'>) => {
+    const id = `toast-${Date.now()}`;
+    setToasts(prev => [...prev, { id, title, description, variant }]);
+  }, []);
+
+  const handleLoadSeries = useCallback(async () => {
+    if (!currentSeries) return;
+
+    try {
+      // Clean up any existing blob URLs
+      if (viewportState.loadedImages) {
+        viewportState.loadedImages.forEach(image => {
+          if (image.imageId.startsWith('blob:')) {
+            URL.revokeObjectURL(image.imageId);
+          } else if (image.imageId.startsWith('dicomfile://blob:')) {
+            URL.revokeObjectURL(image.imageId.replace('dicomfile://', ''));
+          }
+        });
+      }
+
+      const newLoadedImages = await Promise.all(
+        currentSeries.images.map(async (image) => {
+          let imageId;
+          
+          // Create a blob URL for the file
+          const blob = new Blob([image.file], { type: image.file.type });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          if (image.format === 'dicom') {
+            // For DICOM files, use the dicomfile loader
+            imageId = `dicomfile://${blobUrl}`;
+          } else {
+            // For other image types, use the regular URL
+            imageId = blobUrl;
+          }
+
+          return {
+            localUrl: image.localUrl,
+            analysis: image.analysis,
+            metadata: image.metadata,
+            imageId,
+            file: image.file
+          };
+        })
+      );
+
+      setViewportState((prev) => ({
+        ...prev,
+        loadedImages: newLoadedImages,
+        currentImageIndex: 0
+      }));
+
+      showToast({
+        title: 'Series Loaded',
+        description: `Successfully loaded ${newLoadedImages.length} images into viewers`
+      });
+
+    } catch (err) {
+      console.error('Error loading series:', err);
+      showToast({
+        title: 'Error',
+        description: 'Failed to load image series. Please ensure files are valid DICOM images.',
+        variant: 'destructive'
+      });
+    }
+  }, [currentSeries, showToast, viewportState.loadedImages]);
+
+  // Add cleanup effect
+  useEffect(() => {
+    return () => {
+      // Clean up blob URLs when component unmounts
+      if (viewportState.loadedImages) {
+        viewportState.loadedImages.forEach(image => {
+          if (image.imageId.startsWith('blob:')) {
+            URL.revokeObjectURL(image.imageId);
+          } else if (image.imageId.startsWith('dicomfile://blob:')) {
+            URL.revokeObjectURL(image.imageId.replace('dicomfile://', ''));
+          }
+        });
+      }
+    };
+  }, []);
+
+  const handleSendMessage = useCallback(async (command: any) => {
+    if (!message.trim()) return;
+    
+    const currentMessage = message;
+    setMessage("");
+    
+    try {
+      setMessages(prev => [...prev, { role: 'user', content: currentMessage }]);
+      await sendTextMessage(JSON.stringify({ type: 'message', payload: { text: currentMessage } }));
+    } catch (err) {
+      console.error(err);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Error: Failed to send message' }]);
+    }
+  }, [message, sendTextMessage]);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
+  const handleUploadComplete = useCallback(async (files: File[]) => {
+    if (!files || files.length === 0) {
+      showToast({
+        title: 'Upload Failed',
+        description: 'No files provided.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      if (currentSeries) {
+        cleanupImageSeries(currentSeries);
+      }
+
+      const series = await processImageSeries(files);
+      setCurrentSeries(series);
+
+      showToast({
+        title: 'Upload Successful',
+        description: `Loaded ${series.images.length} images into ${series.viewerType} viewer`
+      });
+    } catch (error) {
+      console.error('Upload error:', error);
+      showToast({
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Failed to process images',
+        variant: 'destructive'
+      });
+    }
+  }, [currentSeries, showToast]);
+
   useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (!message.trim()) return;
-    try {
-      setMessages(prev => [...prev, { role: 'user', content: message }]);
-      await sendTextMessage(message);
-      setMessage("");
-    } catch (err) {
-      console.error(err);
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+  }, []);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage({ type: 'loadSeries', payload: { seriesId: currentSeries?.id, format: currentSeries?.format, viewerType: currentSeries?.viewerType, metadata: currentSeries?.metadata, images: currentSeries?.images.map(img => ({ url: img.localUrl, analysis: img.analysis, metadata: img.metadata })) } });
     }
-  };
-
-  const ChatInput = () => (
-    <form 
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleSendMessage();
-      }}
-      className="flex gap-2"
-    >
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Type a message..."
-        className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
-      />
-      <button
-        type="submit"
-        className="shrink-0 px-4 py-2 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
-      >
-        Send
-      </button>
-    </form>
-  );
-
-  const ChatMessages = () => (
-    <>
-      {messages.map((msg, i) => (
-        <div
-          key={i}
-          className={cn(
-            "p-2 rounded-lg max-w-[80%] mb-2",
-            msg.role === 'user' 
-              ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-              : "bg-[#2D3848] text-foreground/80"
-          )}
-        >
-          {msg.content}
-        </div>
-      ))}
-      <div ref={chatEndRef} />
-    </>
-  );
+  }, [handleSendMessage, currentSeries]);
 
   return (
     <>
-      <div className="h-full flex-items flex-col text-center bg-[#141a29]">
+      <div className="h-full flex flex-col text-center bg-[#141a29]">
         <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
           <button
             className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
@@ -736,7 +870,23 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
             Analysis
           </span>
         </div>
-
+        <div className="px-4 py-2 border-b border-[#2D3848]">
+          {currentSeries && (
+            <button
+              onClick={handleLoadSeries}
+              type="button"
+              className={cn(
+                "w-full px-4 py-2 rounded-md transition-colors duration-200",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2538]",
+                "bg-[#2D3848] text-[#4cedff] hover:bg-[#374357]",
+                "flex items-center justify-center gap-2"
+              )}
+            >
+              <FileImage className="h-4 w-4" />
+              Load Series
+            </button>
+          )}
+        </div>
         <div className={cn(
           "flex-1 overflow-hidden",
           !isExpanded && "hidden"
@@ -750,22 +900,61 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
               </TabsList>
 
               <TabsContent value="analysis" className="mt-4">
-                <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                  <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
-                    <span className="text-sm font-medium">AI Chat</span>
-                    <button
-                      onClick={() => setIsChatExpanded(!isChatExpanded)}
-                      className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
-                      title={isChatExpanded ? "Minimize chat" : "Expand chat"}
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4">
-                    <ChatMessages />
-                  </div>
-                  <div className="p-2 border-t border-[#2D3848]">
-                    <ChatInput />
+                <div className="space-y-4">
+                  <ImageSeriesUpload onUploadComplete={handleUploadComplete} />
+                  <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
+                    <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                      <span className="text-sm font-medium">Chat</span>
+                      <button
+                        onClick={() => setIsChatExpanded(!isChatExpanded)}
+                        className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                        title={isChatExpanded ? "Minimize chat" : "Expand chat"}
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4">
+                      {messages.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "p-2 rounded-lg max-w-[80%] mb-2",
+                            msg.role === 'user' 
+                              ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
+                              : "bg-[#2D3848] text-foreground/80"
+                          )}
+                        >
+                          {msg.content}
+                        </div>
+                      ))}
+                      <div ref={chatEndRef} />
+                    </div>
+                    <div className="flex gap-2 p-2 border-t border-[#2D3848]">
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={message}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Type a message..."
+                        className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                        autoComplete="off"
+                      />
+                      <button
+                        onClick={() => handleSendMessage({ type: 'message', payload: { text: message } })}
+                        type="button"
+                        disabled={!message.trim()}
+                        className={cn(
+                          "shrink-0 px-4 py-2 rounded-md transition-colors duration-200",
+                          "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]",
+                          message.trim() 
+                            ? "bg-[#4cedff] text-[#1b2237] hover:bg-[#4cedff]/90" 
+                            : "bg-[#2D3848] text-foreground/50 cursor-not-allowed"
+                        )}
+                      >
+                        Send
+                      </button>
+                    </div>
                   </div>
                 </div>
               </TabsContent>
@@ -810,10 +999,48 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
               </button>
             </div>
             <div className="flex-1 bg-[#161d2f] rounded-md p-4 overflow-y-auto">
-              <ChatMessages />
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "p-3 rounded-lg max-w-[80%] mb-3",
+                    msg.role === 'user' 
+                      ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
+                      : "bg-[#2D3848] text-foreground/80"
+                  )}
+                >
+                  {msg.content}
+                </div>
+              ))}
+              <div ref={chatEndRef} />
             </div>
             <div className="mt-4">
-              <ChatInput />
+              <div className="flex gap-2 p-2 border-t border-[#2D3848]">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={message}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type a message..."
+                  className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                  autoComplete="off"
+                />
+                <button
+                  onClick={() => handleSendMessage({ type: 'message', payload: { text: message } })}
+                  type="button"
+                  disabled={!message.trim()}
+                  className={cn(
+                    "shrink-0 px-4 py-2 rounded-md transition-colors duration-200",
+                    "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]",
+                    message.trim() 
+                      ? "bg-[#4cedff] text-[#1b2237] hover:bg-[#4cedff]/90" 
+                      : "bg-[#2D3848] text-foreground/50 cursor-not-allowed"
+                  )}
+                >
+                  Send
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -850,7 +1077,9 @@ function App() {
     leftPanelCollapsed: false,
     rightPanelCollapsed: false,
     expandedViewport: null,
-    theme: 'dark'
+    theme: "dark",
+    currentImageIndex: 0,
+    loadedImages: []
   });
 
   const { 
@@ -899,6 +1128,19 @@ function App() {
     }));
   };
 
+  // Initialize cornerstone WADO image loader
+  cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
+  cornerstoneWADOImageLoader.configure({
+    beforeSend: (xhr: XMLHttpRequest) => {
+      // Add any headers or configurations needed for your WADO server
+    }
+  });
+
+  // Initialize cornerstone when the app starts
+  if (typeof window !== 'undefined') {
+    initializeCornerstone();
+  }
+
   return (
     <div className="medical-viewer w-screen h-screen overflow-hidden">
       <MediaControlPanel />
@@ -942,6 +1184,8 @@ function App() {
               setViewportState(prev => ({ ...prev, activeViewport: viewport }))
             }
             onViewportExpand={handleViewportExpand}
+            loadedImages={viewportState.loadedImages}
+            currentImageIndex={viewportState.currentImageIndex}
           />
         </div>
       </div>
@@ -958,6 +1202,8 @@ function App() {
           onExpandedChange={(expanded) => 
             setViewportState(prev => ({ ...prev, rightPanelCollapsed: !expanded }))
           }
+          viewportState={viewportState}
+          setViewportState={setViewportState}
         />
       </div>
     </div>
