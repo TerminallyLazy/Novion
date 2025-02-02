@@ -38,6 +38,7 @@ import {
   ArrowLeftRight,
   PlayCircle,
   ZoomIn,
+  X,
 } from "lucide-react";
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -226,63 +227,6 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
         "flex-1 overflow-y-auto transition-all duration-200",
         !isExpanded && "opacity-0"
       )}>
-        {/* <div className="image-details">
-          <div className="image-detail-row">
-            <span className="image-detail-label">Series</span>
-            <span className="image-detail-value">CT Chest</span>
-          </div>
-          <div className="image-detail-row">
-            <span className="image-detail-label">Slice</span>
-            <span className="image-detail-value">45/128</span>
-          </div>
-          <div className="image-detail-row">
-            <span className="image-detail-label">Thickness</span>
-            <span className="image-detail-value">2.5mm</span>
-          </div>
-        </div>
-
-        <div className="slider-container">
-          <div className="slider-label">
-            <span>Window</span>
-            <span>{window}</span>
-          </div>
-          <div className="relative">
-            <Slider
-              value={[window]}
-              onValueChange={(value) => setWindow(value[0])}
-              min={0}
-              max={4000}
-              step={1}
-              className="relative w-full h-1.5 rounded-full overflow-hidden [&>[role=slider]]:block [&>[role=slider]]:w-4 [&>[role=slider]]:h-4 [&>[role=slider]]:rounded-full [&>[role=slider]]:bg-[#4cedff] [&>[role=slider]]:shadow-[0_0_0_2px_rgba(76,237,255,0.4),0_0_10px_rgba(76,237,255,0.3)] [&>[role=slider]]:focus:outline-none [&>[role=slider]]:focus:ring-2 [&>[role=slider]]:focus:ring-[#4cedff]/50 [&>.range]:absolute [&>.range]:h-full [&>.range]:bg-[#4cedff] [&>.range]:shadow-[0_0_15px_rgba(76,237,255,0.4)]"
-            />
-          </div>
-          <div className="slider-label">
-            <span>Level</span>
-            <span>{level}</span>
-          </div>
-          <div className="relative">
-            <Slider
-              value={[level]}
-              onValueChange={(value) => setLevel(value[0])}
-              min={-1000}
-              max={1000}
-              step={1}
-              className="relative w-full h-1.5 bg-[#4cedff]/10 rounded-full overflow-hidden [&>[role=slider]]:block [&>[role=slider]]:w-4 [&>[role=slider]]:h-4 [&>[role=slider]]:rounded-full [&>[role=slider]]:bg-[#4cedff] [&>[role=slider]]:shadow-[0_0_0_2px_rgba(76,237,255,0.4),0_0_10px_rgba(76,237,255,0.3)] [&>[role=slider]]:focus:outline-none [&>[role=slider]]:focus:ring-2 [&>[role=slider]]:focus:ring-[#4cedff]/50 [&>.range]:absolute [&>.range]:h-full [&>.range]:bg-[#4cedff] [&>.range]:shadow-[0_0_15px_rgba(76,237,255,0.4)]"
-            />
-          </div>
-        </div>
-
-        <div className="measurements-container">
-          <h3 className="text-sm font-medium mb-2">Measurements</h3>
-          <div className="measurement-item">
-            <span>Distance 1</span>
-            <span className="text-[#7BE0FF]">24.5 mm</span>
-          </div>
-          <div className="text-xs text-foreground/60 mt-1">
-            Axial slice 45
-          </div>
-        </div> */}
-
         <div className="tool-section border-b border-[#e4e7ec] dark:border-[#2D3848]">
           <h3 className="tool-section-title text-[#64748b] dark:text-foreground/60">View</h3>
           <div className="tool-grid">
@@ -586,7 +530,7 @@ function ViewportGrid({
         )}
       </div>
       {expandedViewport && (
-        <div className="absolute inset-0">
+        <div className="absolute inset-4">
           <ViewportPanel
             type={expandedViewport}
             isActive={true}
@@ -594,6 +538,62 @@ function ViewportGrid({
             onActivate={() => {}}
             onToggleExpand={() => onViewportExpand(expandedViewport)}
           />
+        </div>
+      )}
+
+      {/* Expanded Chat Modal */}
+      {isChatExpanded && (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+          <div className="bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-4 w-[800px] h-[600px] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-medium">AI Chat</span>
+              <button
+                onClick={() => setIsChatExpanded(false)}
+                className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 bg-[#161d2f] rounded-md p-4 overflow-y-auto">
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "p-3 rounded-lg max-w-[80%] mb-3",
+                    msg.role === 'user' 
+                      ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
+                      : "bg-[#2D3848] text-foreground/80"
+                  )}
+                >
+                  {msg.content}
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="mt-4">
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendMessage();
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  className="min-w-0 flex-1 px-4 py-3 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 px-6 py-3 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -653,8 +653,16 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isEventLogDetached, setIsEventLogDetached] = useState(false);
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { isConnected, sendTextMessage, error } = useGemini();
+
+  // Add auto-scroll effect
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
@@ -667,104 +675,150 @@ function RightPanel({ isExpanded, onExpandedChange }: ToolbarProps) {
     }
   };
 
-  return (
-    <div className="h-full flex-items flex-col text-center bg-[#141a29]">
-      <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
-        <button
-          className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
-          onClick={() => onExpandedChange(!isExpanded)}
-        >
-          {isExpanded ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
+  const ChatInput = () => (
+    <form 
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleSendMessage();
+      }}
+      className="flex gap-2"
+    >
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Type a message..."
+        className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+      />
+      <button
+        type="submit"
+        className="shrink-0 px-4 py-2 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
+      >
+        Send
+      </button>
+    </form>
+  );
+
+  const ChatMessages = () => (
+    <>
+      {messages.map((msg, i) => (
+        <div
+          key={i}
+          className={cn(
+            "p-2 rounded-lg max-w-[80%] mb-2",
+            msg.role === 'user' 
+              ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
+              : "bg-[#2D3848] text-foreground/80"
           )}
-        </button>
-        <span className={cn("font-medium flex-1 text-center", !isExpanded && "opacity-0")}>
-          Analysis
-        </span>
-      </div>
+        >
+          {msg.content}
+        </div>
+      ))}
+      <div ref={chatEndRef} />
+    </>
+  );
 
-      <div className={cn(
-        "flex-1 overflow-hidden",
-        !isExpanded && "hidden"
-      )}>
-        <div className="h-full p-4">
-          <Tabs defaultValue="analysis">
-            <TabsList className="grid w-full grid-cols-3 gap-1 p-1 rounded-md">
-              <TabsTrigger value="analysis">Analysis</TabsTrigger>
-              <TabsTrigger value="voice">Voice</TabsTrigger>
-              <TabsTrigger value="events">Events</TabsTrigger>
-            </TabsList>
+  return (
+    <>
+      <div className="h-full flex-items flex-col text-center bg-[#141a29]">
+        <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
+          <button
+            className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
+            onClick={() => onExpandedChange(!isExpanded)}
+          >
+            {isExpanded ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
+          <span className={cn("font-medium flex-1 text-center", !isExpanded && "opacity-0")}>
+            Analysis
+          </span>
+        </div>
 
-            <TabsContent value="analysis" className="mt-4">
-              <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                <div className="flex-1 overflow-y-auto p-4">
-                  {messages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "p-2 rounded-lg max-w-[80%] mb-2",
-                        msg.role === 'user' 
-                          ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-                          : "bg-[#2D3848] text-foreground/80"
-                      )}
-                    >
-                      {msg.content}
-                    </div>
-                  ))}
-                  <div ref={chatEndRef} />
-                </div>
-                <div className="p-2 border-t border-[#2D3848]">
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }}
-                    className="flex gap-2"
-                  >
-                    <input
-                      type="text"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Type a message..."
-                      className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
-                    />
+        <div className={cn(
+          "flex-1 overflow-hidden",
+          !isExpanded && "hidden"
+        )}>
+          <div className="h-full p-4">
+            <Tabs defaultValue="analysis">
+              <TabsList className="grid w-full grid-cols-3 gap-1 p-1 rounded-md">
+                <TabsTrigger value="analysis">Analysis</TabsTrigger>
+                <TabsTrigger value="voice">Voice</TabsTrigger>
+                <TabsTrigger value="events">Events</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="analysis" className="mt-4">
+                <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
+                  <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                    <span className="text-sm font-medium">AI Chat</span>
                     <button
-                      type="submit"
-                      className="shrink-0 px-4 py-2 bg-[#4cedff] text-[#1b2237] rounded-md hover:bg-[#4cedff]/90 focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]"
+                      onClick={() => setIsChatExpanded(!isChatExpanded)}
+                      className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                      title={isChatExpanded ? "Minimize chat" : "Expand chat"}
                     >
-                      Send
+                      <Maximize2 className="h-4 w-4" />
                     </button>
-                  </form>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <ChatMessages />
+                  </div>
+                  <div className="p-2 border-t border-[#2D3848]">
+                    <ChatInput />
+                  </div>
                 </div>
-              </div>
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="voice" className="mt-4">
-              {/* Existing voice content */}
-            </TabsContent>
+              <TabsContent value="voice" className="mt-4">
+                {/* Voice content */}
+              </TabsContent>
 
-            <TabsContent value="events" className="mt-4">
-              <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
-                  <span className="text-sm font-medium">Event Log</span>
-                  <button
-                    onClick={() => setIsEventLogDetached(!isEventLogDetached)}
-                    className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
-                  >
-                    {isEventLogDetached ? "Attach" : "Detach"}
-                  </button>
+              <TabsContent value="events" className="mt-4">
+                <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
+                  <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                    <span className="text-sm font-medium">Event Log</span>
+                    <button
+                      onClick={() => setIsEventLogDetached(!isEventLogDetached)}
+                      className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                    >
+                      {isEventLogDetached ? "Attach" : "Detach"}
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {/* Event log content */}
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4">
-                  {/* Event log content */}
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Expanded Chat Modal */}
+      {isChatExpanded && (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+          <div className="bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-4 w-[800px] h-[600px] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-medium">AI Chat</span>
+              <button
+                onClick={() => setIsChatExpanded(false)}
+                className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                title="Close expanded chat"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 bg-[#161d2f] rounded-md p-4 overflow-y-auto">
+              <ChatMessages />
+            </div>
+            <div className="mt-4">
+              <ChatInput />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -1,0 +1,220 @@
+Project: RadX - Medical Imaging Viewer
+=======================================
+
+Overview
+--------
+RadX is a sophisticated medical imaging viewer built with Next.js and TypeScript, designed for viewing and analyzing medical images (DICOM files). The application features a modern, professional interface with support for multiple viewport layouts and advanced medical imaging tools, integrated with AI-powered analysis through Google's Gemini API.
+
+Key Features
+-----------
+1. Multi-viewport Display
+   - Supports 1x1, 2x2, and 3x1 layout configurations
+   - Axial, Sagittal, and Coronal view types
+   - Expandable viewports with fullscreen capability
+   - Built on Cornerstone.js for DICOM rendering
+
+2. Advanced Visualization Tools
+   - Pan and zoom controls with touch support
+   - Window/level adjustment
+   - Distance and area measurements
+   - Angle measurements
+   - Profile line tool
+   - Image segmentation capabilities
+   - Real-time viewport synchronization
+
+3. AI Integration & Analysis
+   - Advanced Medical AI Integration:
+     * Powered by Google Gemini 2.0 API with multimodal capabilities
+     * Real-time medical image analysis and interpretation
+     * Evidence-based diagnostic assistance
+     * Support for multiple imaging modalities:
+       - CT scans (axial, coronal, sagittal views)
+       - MRI sequences (T1, T2, FLAIR, etc.)
+       - Ultrasound imaging
+       - X-ray radiographs
+       - PET scans
+       - Nuclear medicine imaging
+
+   - Computer Vision Capabilities:
+     * Automated lesion detection and segmentation
+     * Anatomical structure identification
+     * Volumetric measurements and analysis
+     * Abnormality detection with confidence scoring
+     * Comparative analysis with reference images
+     * Region of interest (ROI) analysis
+     * Tissue density measurements
+     * Growth tracking over time
+
+   - Clinical Decision Support:
+     * Evidence-based analysis and recommendations
+     * Reference to relevant medical literature
+     * Similar case comparison
+     * Statistical analysis of findings
+     * Risk assessment and stratification
+     * Treatment progress monitoring
+     * Quantitative imaging biomarkers
+
+   - Interactive AI Assistance:
+     * Natural language interaction for queries
+     * Real-time voice command support
+     * Contextual medical information provision
+     * Anatomical reference and education
+     * Measurement and annotation assistance
+     * Protocol suggestions and optimization
+     * Follow-up recommendations
+
+   - Data Analysis & Reporting:
+     * Structured report generation
+     * Key finding summarization
+     * Historical comparison analysis
+     * Patient progress tracking
+     * Statistical trend analysis
+     * Integration with clinical guidelines
+     * Custom report templating
+
+   - Real-time Processing:
+     * Concurrent analysis during image viewing
+     * Dynamic response to viewport changes
+     * Immediate feedback on measurements
+     * Real-time segmentation updates
+     * Progressive result refinement
+     * Adaptive processing based on context
+
+   - Quality Assurance:
+     * Image quality assessment
+     * Protocol compliance checking
+     * Radiation dose optimization
+     * Artifact detection and correction
+     * Positioning verification
+     * Technical parameter validation
+
+   - Integration Features:
+     * Bi-directional WebSocket communication
+     * Real-time audio transcription and response
+     * Seamless integration with viewer tools
+     * Context-aware assistance
+     * Adaptive interface interactions
+     * Multi-language support
+     * Customizable AI sensitivity settings
+
+4. User Interface
+   - Collapsible left and right panels (320px default width)
+   - Dark/light theme support with system preference detection
+   - Draggable and resizable media control panel with:
+     * Microphone input control
+     * Screen sharing capability
+     * Webcam integration
+     * Real-time status indicators
+   - Interactive event logging with maximize/minimize capabilities
+   - Real-time chat/analysis panel with AI responses
+   - Customizable toolbar with tool state management
+
+5. Technical Implementation
+   - Framework: Next.js with TypeScript
+   - UI Components: 
+     * Custom components with Radix UI primitives
+     * Reusable button, card, input, select, slider, and tabs components
+     * Dynamic theme support with CSS variables
+     * Consistent component API with TypeScript interfaces
+   - Styling: 
+     * Tailwind CSS with custom configuration
+     * Dark/light theme support via CSS variables
+     * Custom animations and keyframes
+     * Responsive design utilities
+     * Custom color palette with HSL variables
+   - State Management: 
+     * React Query for data fetching
+     * Context API for global state (Media, WebSocket, Gemini)
+     * Custom hooks for feature-specific state
+     * Realtime mutation support
+   - Medical Imaging: 
+     * Cornerstone.js for DICOM handling
+     * Custom viewport synchronization
+   - WebSocket Integration:
+     * Real-time communication with Gemini API
+     * Binary audio data handling with base64 encoding
+     * Automatic reconnection logic
+     * Managed message queuing
+
+6. Additional Features
+   - DICOM file support with comprehensive metadata handling
+   - Export and sharing capabilities
+   - Screenshot functionality
+   - Real-time measurements with pixel-perfect accuracy
+   - Voice recognition with WebRTC integration
+   - Responsive design with dynamic layout adjustments
+
+Architecture
+-----------
+The project follows a modular architecture with clear separation of concerns:
+
+1. Components/
+   - DicomViewer: Core viewer component with Cornerstone.js integration
+   - MediaControlPanel: Audio/video control interface with WebRTC
+   - CustomToolButton: Reusable tool interface components
+   - Panel: Flexible panel system with resize capabilities
+   - UI Components:
+     * Button: Polymorphic button with variants
+     * Card: Container component with variants
+     * Input: Form input components
+     * Select: Dropdown selection component
+     * Slider: Range input component
+     * Tabs: Tabbed interface component
+   - Providers: Global state and context management for:
+     * Media streams and device management
+     * WebSocket connection state
+     * Gemini AI integration
+     * React Query client
+
+2. Lib/
+   - api/: 
+     * Gemini API integration with Python WebSocket server
+     * Type-safe API client with RPC-style interfaces
+     * Structured response handling for analysis results
+   - hooks/: 
+     * useGeminiConnection for AI communication
+     * useMedia for device management
+     * useRealtimeMutation for streaming updates
+   - utils/: 
+     * Shared utilities and helper functions
+     * TypeScript utility types
+     * Tailwind class merging utilities
+   - env.ts: Environment configuration and validation
+   - types/: TypeScript type definitions
+
+3. Features/
+   - Real-time audio processing:
+     * 16kHz PCM audio capture
+     * WebSocket streaming to Gemini API
+     * 24kHz audio playback
+     * Automatic audio queue management
+   - Bi-directional communication with AI services
+   - Advanced medical image manipulation
+   - Multi-layout viewport management
+   - Event logging and analysis
+
+3. Styling/
+   - Tailwind Configuration:
+     * Custom color palette with HSL variables
+     * Responsive breakpoints
+     * Custom animations
+     * Form plugin integration
+   - Theme System:
+     * Dark/light mode support
+     * CSS variable-based theming
+     * Custom component variants
+     * Consistent spacing and typography
+
+The application uses a client-side architecture with server components for data handling and AI processing. It maintains a clean separation between UI components and business logic, with dedicated contexts for media, WebSocket, and AI integration management.
+
+Security & Performance
+--------------------
+- Secure API key management through environment variables
+- Efficient binary data handling:
+  * Optimized audio streaming with proper sample rates
+  * Base64 encoding for binary WebSocket messages
+  * Managed audio queue for smooth playback
+- Optimized viewport rendering with Cornerstone.js
+- Automatic WebSocket reconnection with exponential backoff
+- Managed audio queue for smooth playback
+- Responsive UI with minimal re-renders

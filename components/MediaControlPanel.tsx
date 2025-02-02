@@ -32,6 +32,24 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [dragBounds, setDragBounds] = useState({ left: 0, top: 0, right: 0, bottom: 0 });
+
+  // Calculate drag bounds
+  useEffect(() => {
+    const updateBounds = () => {
+      const padding = 16; // 16px padding from edges
+      setDragBounds({
+        left: padding,
+        top: padding,
+        right: window.innerWidth - (panelSize.width + padding),
+        bottom: window.innerHeight - (panelSize.height + padding)
+      });
+    };
+
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
+  }, [panelSize]);
 
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
     setLogs(prev => [...prev, { timestamp: new Date(), type, message }]);
@@ -245,14 +263,28 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
     document.addEventListener('mouseup', handleMouseUp);
   }, [isResizing, panelSize]);
 
+  const handleDrag: DraggableEventHandler = (e, data) => {
+    // Prevent text selection during drag
+    if (e.type === 'mousemove') {
+      e.preventDefault();
+    }
+  };
+
   return (
     <>
       <Draggable
         nodeRef={panelRef}
         defaultPosition={{ x: window.innerWidth / 2 - 200, y: window.innerHeight - 300 }}
-        bounds="body"
+        bounds={{
+          left: dragBounds.left,
+          top: dragBounds.top,
+          right: dragBounds.right,
+          bottom: dragBounds.bottom
+        }}
         handle=".handle"
         disabled={isResizing}
+        onDrag={handleDrag}
+        positionOffset={{ x: 0, y: 0 }}
       >
         <div 
           ref={panelRef}
