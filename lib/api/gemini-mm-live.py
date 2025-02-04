@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import io
 import json
 import pyaudio
 import threading
@@ -13,11 +15,12 @@ import struct
 import wave
 import PIL
 import mss
-import requests 
+import requests
 from google import genai
 from PIL import Image
 from io import BytesIO
 # from google.generativeai import WebSocketDisconnect
+
 
 # ------------------------------------------------------------------------------
 # ENV and constants
@@ -37,13 +40,13 @@ gemini_websocket = None
 MODEL_NAME = "gemini-2.0-flash-exp"
 
 # Audio constants:
-CHUNK_SIZE = 2048
+CHUNK_SIZE = 1024
 AUDIO_FORMAT = pyaudio.paInt16
 NUM_CHANNELS = 1
 INPUT_SAMPLE_RATE = 16000  # Input: 16kHz little-endian PCM
-OUTPUT_SAMPLE_RATE = 24000 # Output: 24kHz little-endian PCM
-BYTES_PER_SAMPLE = 2      # 16-bit = 2 bytes per sample
-BUFFER_SIZE = 8192        # Larger buffer for stability
+OUTPUT_SAMPLE_RATE = 24000  # Output: 24kHz little-endian PCM
+BYTES_PER_SAMPLE = 2  # 16-bit = 2 bytes per sample
+BUFFER_SIZE = 4096  # Larger buffer for stability
 
 # Add at the top with other globals
 mic_muted = False
@@ -56,25 +59,22 @@ setup_message = {
     "setup": {
         "model": f"models/{MODEL_NAME}",
         "generation_config": {
-            "response_modalities": ["AUDIO"],
+            "response_modalities": ["TEXT"],
             "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {
-                        "voice_name": "Kore"
-                    }
-                }
-            }
-        }
+                "voice_config": {"prebuilt_voice_config": {"voice_name": "Kore"}}
+            },
+        },
     }
 }
 
+
 async def main():
-    async with websockets.connect(
-        uri
-    ) as websocket:
+    async with websockets.connect(uri) as websocket:
         # 1) Send the BidiGenerateContentSetup as JSON
         await websocket.send(json.dumps(setup_message))
-        print("Sent BidiGenerateContentSetup. Waiting for 'BidiGenerateContentSetupComplete'...")
+        print(
+            "Sent BidiGenerateContentSetup. Waiting for 'BidiGenerateContentSetupComplete'..."
+        )
 
         while True:
             init_resp = await websocket.recv()
@@ -82,13 +82,13 @@ async def main():
             try:
                 data = json.loads(init_resp)
             except json.JSONDecodeError:
-        
                 print("Unexpected non-JSON response before setup complete.")
                 continue
 
-           
             if "setupComplete" in data:
-                print("Gemini: Setup complete. You may now speak or type. Type 'exit' to quit.\n")
+                print(
+                    "Gemini: Setup complete. You may now speak or type. Type 'exit' to quit.\n"
+                )
                 break
             else:
                 # Could be an error or some other message.
@@ -101,8 +101,7 @@ async def main():
 
         # Wait until either the user types 'exit' or the connection closes
         done, pending = await asyncio.wait(
-            [mic_task, text_task, receive_task],
-            return_when=asyncio.FIRST_COMPLETED
+            [mic_task, text_task, receive_task], return_when=asyncio.FIRST_COMPLETED
         )
 
         # Cancel any remaining tasks
@@ -114,6 +113,80 @@ async def main():
             await websocket.close()
         print("Session closed.")
 
+
+
+async def handle_tool_calls(ws, tool_calls):
+    """
+    Handle multiple tool calls in a single server response.
+    Processes each tool call sequentially and sends responses back to Gemini.
+    """
+    responses = []
+    for tool_call in tool_calls:
+        await handle_tool_call(ws, tool_call)
+        responses.append(tool_call)
+    return responses
+
+async def google_search(query):
+    """
+    Uses Google's Custom Search API to fetch results dynamically.
+    """
+    API_KEY = os.environ.get("GOOGLE_API_KEY")
+    CX = os.environ.get("GOOGLE_CX")  # Custom Search Engine ID
+
+    if not API_KEY or not CX:
+        return {"error": "Google API key or CX is missing"}
+
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {"q": query, "key": API_KEY, "cx": CX}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()  # Structured Google Search results
+        except httpx.HTTPStatusError as e:
+            return {"error": f"HTTP error: {e.response.status_code}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+
+
+# ------------------------------------------------------------------------------
+# Tool: Secure Code Execution for Gemini 2 Agent
+# ------------------------------------------------------------------------------
+
+# Define safe built-ins for controlled execution
+SAFE_BUILTINS = {
+    "abs": abs, "min": min, "max": max, "sum": sum, "len": len,
+    "round": round, "range": range, "enumerate": enumerate, "sorted": sorted,
+    "map": map, "filter": filter, "any": any, "all": all, "zip": zip,
+    "str": str, "int": int, "float": float, "bool": bool, "list": list, "dict": dict, "set": set,
+    "print": print  # Allow print for capturing output
+}
+
+async def execute_code(fc_args):
+    """
+    Securely executes Python code with limited built-ins.
+    """
+    code = fc_args.get("code", "")
+    exec_result = {}
+
+    # Execution context (limited globals, empty locals)
+    safe_globals = {"__builtins__": SAFE_BUILTINS}
+    safe_locals = {}
+
+    with contextlib.redirect_stdout(io.StringIO()) as f:
+        try:
+            exec(code, safe_globals, safe_locals)  # Execute safely
+            output = f.getvalue()
+            exec_result = {"result": {"string_value": output or "Execution complete"}}
+        except Exception as e:
+            exec_result = {"error": str(e)}
+
+    return exec_result
+
+
+
 # ------------------------------------------------------------------------------
 # Helpers for building the JSON messages
 # ------------------------------------------------------------------------------
@@ -124,30 +197,23 @@ def build_text_message(user_input: str) -> str:
     """
     msg = {
         "client_content": {
-            "turns": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "text": user_input
-                        }
-                    ]
-                }
-            ],
-            "turn_complete": True
+            "turns": [{"role": "user", "parts": [{"text": user_input}]}],
+            "turn_complete": True,
         }
     }
     return json.dumps(msg)
 
-#------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
 # Main session
 # ------------------------------------------------------------------------------
 async def gemini_session(websocket):
     global isConnected
     isConnected = True
-    
+
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash-exp',
+        model = genai.GenerativeModel(
+            "gemini-2.0-flash-exp",
             tools=[
                 {
                     "name": "searchMedicalImages",
@@ -157,35 +223,32 @@ async def gemini_session(websocket):
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The search query for finding medical images"
+                                "description": "The search query for finding medical images",
                             },
                             "n": {
                                 "type": "number",
-                                "description": "Start index (1-based)"
+                                "description": "Start index (1-based)",
                             },
-                            "m": {
-                                "type": "number",
-                                "description": "End index"
-                            },
+                            "m": {"type": "number", "description": "End index"},
                             "at": {
                                 "type": "string",
-                                "description": "Article type filter"
+                                "description": "Article type filter",
                             },
                             "coll": {
                                 "type": "string",
-                                "description": "Collection filter"
+                                "description": "Collection filter",
                             },
                             "favor": {
                                 "type": "string",
-                                "description": "Rank by preference"
+                                "description": "Rank by preference",
                             },
                             "fields": {
                                 "type": "string",
-                                "description": "Fields to search in"
-                            }
+                                "description": "Fields to search in",
+                            },
                         },
-                        "required": ["query"]
-                    }
+                        "required": ["query"],
+                    },
                 },
                 {
                     "name": "loadImageSeries",
@@ -195,61 +258,48 @@ async def gemini_session(websocket):
                         "properties": {
                             "imgId": {
                                 "type": "string",
-                                "description": "The ID of the image series to load"
+                                "description": "The ID of the image series to load",
                             },
                             "type": {
                                 "type": "string",
                                 "description": "The type of viewer to use (dicom, image, or video)",
-                                "enum": ["dicom", "image", "video"]
+                                "enum": ["dicom", "image", "video"],
                             },
                             "viewerId": {
                                 "type": "string",
-                                "description": "Optional ID of the specific viewer to load the series into"
-                            }
+                                "description": "Optional ID of the specific viewer to load the series into",
+                            },
                         },
-                        "required": ["imgId"]
-                    }
-                }
-            ]
+                        "required": ["imgId"],
+                    },
+                },
+            ],
         )
-        
+
         chat = model.start_chat(history=[])
-        
+
         while isConnected:
             try:
                 message = await websocket.receive_text()
                 response = chat.send_message(message)
-                
-                if response.candidates[0].content.parts[0].function_call:
-                    function_call = response.candidates[0].content.parts[0].function_call
-                    result = None
-                    
-                    if function_call.name == "searchMedicalImages":
-                        result = await websocket.send_json({
-                            "type": "tool_call",
-                            "name": "searchMedicalImages",
-                            "args": function_call.args
-                        })
-                    elif function_call.name == "loadImageSeries":
-                        result = await websocket.send_json({
-                            "type": "tool_call",
-                            "name": "loadImageSeries",
-                            "args": function_call.args
-                        })
-                    
-                    if result:
-                        response = chat.send_message(result)
-                
+
+                # Check for tool calls in the response
+                if hasattr(response.candidates[0].content.parts[0], 'function_calls'):
+                    tool_calls = response.candidates[0].content.parts[0].function_calls
+                    if tool_calls:
+                        # Handle all tool calls
+                        await handle_tool_calls(websocket, {'functionCalls': tool_calls})
+                        
+                        # Get the final response after tool calls
+                        response = chat.send_message("Continue with the previous context")
+
                 # Send the final response back to the frontend
                 await websocket.send_text(response.text)
-                
-            except WebSocketDisconnect:
-                isConnected = False
-                break
+
             except Exception as e:
                 print(f"Error in gemini_session: {str(e)}")
                 await websocket.send_text(f"Error: {str(e)}")
-                
+
     except Exception as e:
         print(f"Error in gemini_session: {str(e)}")
         if isConnected:
@@ -262,31 +312,34 @@ def build_audio_chunk_message(chunk: bytes) -> str:
     """Properly format audio chunks for Gemini API"""
     # Validate chunk size
     if len(chunk) != CHUNK_SIZE * BYTES_PER_SAMPLE:
-        print(f"Warning: Invalid chunk size {len(chunk)}, expected {CHUNK_SIZE * BYTES_PER_SAMPLE}")
+        print(
+            f"Warning: Invalid chunk size {len(chunk)}, expected {CHUNK_SIZE * BYTES_PER_SAMPLE}"
+        )
         return None
-        
+
     # Validate PCM data
     try:
-        pcm_data = struct.unpack(f"<{CHUNK_SIZE}h", chunk)  # little-endian 16-bit samples
+        pcm_data = struct.unpack(
+            f"<{CHUNK_SIZE}h", chunk
+        )  # little-endian 16-bit samples
         if any(sample < -32768 or sample > 32767 for sample in pcm_data):
             print("Warning: Invalid PCM sample values detected")
             return None
     except struct.error as e:
         print(f"Error unpacking PCM data: {e}")
         return None
-        
+
     b64_data = base64.b64encode(chunk).decode("utf-8")
     msg = {
         "streamInput": {
             "audio": {
                 "data": b64_data,
                 "encoding": "LINEAR16",
-                "sampleRate": INPUT_SAMPLE_RATE
+                "sampleRate": INPUT_SAMPLE_RATE,
             }
         }
     }
     return json.dumps(msg)
-
 
 
 # ------------------------------------------------------------------------------
@@ -304,11 +357,13 @@ async def audio_capture_task(ws: websockets.WebSocketClientProtocol):
         channels=NUM_CHANNELS,
         rate=INPUT_SAMPLE_RATE,
         input=True,
-        frames_per_buffer=CHUNK_SIZE
+        frames_per_buffer=CHUNK_SIZE,
     )
     try:
         while True:
-            if not mic_muted and isConnected:  # Only send audio when not muted and connected
+            if (
+                not mic_muted and isConnected
+            ):  # Only send audio when not muted and connected
                 audio_chunk = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 msg_str = build_audio_chunk_message(audio_chunk)
                 if msg_str:  # Only send if message was built successfully
@@ -320,6 +375,7 @@ async def audio_capture_task(ws: websockets.WebSocketClientProtocol):
         stream.stop_stream()
         stream.close()
         pa.terminate()
+
 
 # ------------------------------------------------------------------------------
 # Task: reading user text input from console and sending it as client_content
@@ -341,6 +397,19 @@ async def text_input_task(ws: websockets.WebSocketClientProtocol):
         message_str = build_text_message(user_text)
         await ws.send(message_str)
 
+async def execute_code(fc_args):
+    code = fc_args.get("code", "")
+    exec_result = {}
+    with contextlib.redirect_stdout(io.StringIO()) as f:
+        try:
+            exec(code)
+            output = f.getvalue()
+            exec_result = {"result": {"string_value": output or "Code executed successfully"}}
+        except Exception as e:
+            exec_result = {"error": str(e)}
+
+    return exec_result
+
 
 # ------------------------------------------------------------------------------
 # Web search function
@@ -349,13 +418,13 @@ def perform_web_search(query):
     """Performs a web search using an external API."""
     try:
         # Replace with your preferred web search API
-        search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx=YOUR_CUSTOM_SEARCH_ID&key=YOUR_API_KEY" # added constants
+        search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx=YOUR_CUSTOM_SEARCH_ID&key=YOUR_API_KEY"  # added constants
         response = requests.get(search_url)
-        response.raise_for_status() # Raise an exception for HTTP errors
+        response.raise_for_status()  # Raise an exception for HTTP errors
         search_results = response.json()
 
         # Format results if needed
-        formatted_results = json.dumps(search_results, indent = 2)
+        formatted_results = json.dumps(search_results, indent=2)
         return formatted_results
     except requests.exceptions.RequestException as e:
         print(f"Error performing web search:{e}")
@@ -363,9 +432,139 @@ def perform_web_search(query):
 
 
 # ------------------------------------------------------------------------------
+# 1️⃣ Tool: Fetch Medical Images from Open-i API
+# ------------------------------------------------------------------------------
+# @tool("fetch_medical_images")
+def fetch_medical_images(
+    query: str,
+    modality: str = "x",
+    body_part: str = "",
+    collection: str = "pmc",
+    limit: int = 5,
+) -> list:
+    """
+    Searches the Open-i API for medical images based on the given parameters.
+
+    Args:
+        query (str): Search term (e.g., 'lung CT scan').
+        modality (str): Image type (default is 'x' for X-rays).
+        body_part (str): Body part filter.
+        collection (str): Collection filter (default: 'pmc' for PubMed Central).
+        limit (int): Number of images to fetch.
+
+    Returns:
+        list: URLs of retrieved images.
+    """
+    api_url = "https://openi.nlm.nih.gov/api/search"
+    params = {
+        "query": query,
+        "n": str(limit),
+        "m": "1",
+        "it": modality,  # Image type (X-ray, MRI, CT, etc.)
+        "coll": collection,
+        "fields": "t,a,msh",  # Search in title, abstract, MeSH terms
+    }
+    if body_part:
+        params["sp"] = body_part  # Specialties filter
+
+    try:
+        response = requests.get(api_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        image_urls = [
+            f"https://openi.nlm.nih.gov{item['imgLarge']}"
+            for item in data.get("list", [])
+            if "imgLarge" in item
+        ]
+
+        return image_urls[:limit]  # Return only the requested number of images
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching images: {e}")
+        return []
+
+
+# ------------------------------------------------------------------------------
+# 2️⃣ Tool: Analyze Medical Images using Google Gemini
+# ------------------------------------------------------------------------------
+# @tool("analyze_medical_image")
+def analyze_medical_image(image_url: str) -> str:
+    """
+    Uses Google Gemini AI to analyze a medical image and return a diagnostic report.
+
+    Args:
+        image_url (str): URL of the image to analyze.
+
+    Returns:
+        str: AI-generated analysis and diagnosis.
+    """
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
+        image_data = response.content
+
+        # Convert image to Base64
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+
+        # Initialize Gemini AI model
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+
+        # Prepare the AI analysis prompt
+        prompt = (
+            "You are a Radiologist Assistant AI. Analyze the following medical image "
+            "and detect any abnormalities, classify any conditions, and provide a "
+            "predictive analysis. Be thorough in your response."
+        )
+
+        # Run analysis using Gemini
+        response = model.generate_content(
+            [
+                {"mime_type": "image/jpeg", "data": image_b64},  # Image data
+                prompt,  # Text prompt for analysis
+            ]
+        )
+
+        return response.text  # Return AI's analysis report
+
+    except Exception as e:
+        print(f"Error analyzing medical image: {e}")
+        return "Error: Unable to analyze the image."
+
+
+# ------------------------------------------------------------------------------
+# 3️⃣ Tool: Load Medical Images into Cornerstone.js Viewer
+# ------------------------------------------------------------------------------
+# @tool("load_medical_image")
+def load_medical_image(image_url: str, viewer_id: str = "cornerstone") -> str:
+    """
+    Loads a medical image into Cornerstone.js for visualization.
+
+    Args:
+        image_url (str): URL of the image to display.
+        viewer_id (str): ID of the viewer (default: 'cornerstone').
+
+    Returns:
+        str: JavaScript snippet to load the image into the Cornerstone.js viewer.
+    """
+    js_script = f"""
+    <script>
+        cornerstone.loadImage('{image_url}').then(function(image) {{
+            cornerstone.displayImage(document.getElementById('{viewer_id}'), image);
+        }}).catch(function(error) {{
+            console.error('Error loading image:', error);
+        }});
+    </script>
+    """
+    return js_script
+
+
+# ------------------------------------------------------------------------------
 # Medical image function
 # ------------------------------------------------------------------------------
-async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str = None) -> str:
+async def fetch_and_analyze_medical_images(
+    gemini_response: dict, api_key: str = None
+) -> str:
     """
     Fetches medical imaging data from a public API, analyzes it using Gemini,
     and returns analysis result as a text string.
@@ -379,44 +578,62 @@ async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str =
     """
     try:
         # 1. Identify if images are needed via the model's response
-        if "I need to see" not in gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "").lower():
+        if (
+            "I need to see"
+            not in gemini_response.get("serverContent", {})
+            .get("modelTurn", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .lower()
+        ):
             return "No medical imaging was needed"
 
         # 2. Get the search terms from Gemini's response
-        search_terms = gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "")
+        search_terms = (
+            gemini_response.get("serverContent", {})
+            .get("modelTurn", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+        )
         if not search_terms:
             return "Error: could not extract search terms from gemini response."
-            
+
         # Extract keywords from the search terms:
-        keywords = search_terms.replace("I need to see","").replace("chest x-ray","").strip()
+        keywords = (
+            search_terms.replace("I need to see", "").replace("chest x-ray", "").strip()
+        )
 
         # 3. Search for and retrieve images
-        image_data, image_type, image_format = await get_images_from_api(keywords, api_key)
+        image_data, image_type, image_format = await get_images_from_api(
+            keywords, api_key
+        )
         if not image_data:
             return "Error: no medical imaging images were found."
 
         # 4. Convert image data to base64 for Gemini
         try:
-            image_b64 = base64.b64encode(image_data).decode('utf-8')
+            image_b64 = base64.b64encode(image_data).decode("utf-8")
         except Exception as e:
             print(f"Error encoding image to base64: {e}")
             return "Error: Could not encode image for analysis."
 
         # 5. Initialize Gemini model for image analysis
         try:
-            model = genai.GenerativeModel('gemini-1.5-pro')
-            
+            model = genai.GenerativeModel("gemini-2.0-flash-exp")
+
             # Prepare the image and prompt for analysis
             prompt = "Please analyze this medical image and describe any notable findings, abnormalities, or areas of concern. Be specific and thorough in your analysis."
-            
+
             # Generate content with the image and prompt
-            response = model.generate_content([
-                {'mime_type': f'image/{image_format.lower()}', 'data': image_b64},
-                prompt
-            ])
-            
+            response = model.generate_content(
+                [
+                    {"mime_type": f"image/{image_format.lower()}", "data": image_b64},
+                    prompt,
+                ]
+            )
+
             analysis_results = response.text
-            
+
             # 6. Load the image into the DICOM viewer if applicable
             try:
                 load_images_into_dicom_viewer(image_data, image_type, image_format)
@@ -424,7 +641,7 @@ async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str =
             except Exception as e:
                 print(f"Warning: Could not load image into DICOM viewer: {e}")
                 # Continue with analysis even if viewer loading fails
-            
+
             return f"Analysis results: {analysis_results}"
 
         except Exception as e:
@@ -440,7 +657,7 @@ async def get_images_from_api(keywords: str, api_key: str = None) -> tuple:
     """
     Searches and retrieves images from the NIH Open-i API based on the keywords given.
     Returns a tuple of (image_data, image_type, image_format)
-    
+
     API Documentation: https://openi.nlm.nih.gov/api
     """
     try:
@@ -448,97 +665,183 @@ async def get_images_from_api(keywords: str, api_key: str = None) -> tuple:
         async with httpx.AsyncClient() as client:
             # NIH Open-i API base endpoint
             base_url = "https://openi.nlm.nih.gov/api/search"
-            
+
             # Construct query parameters
             params = {
-                'query': keywords,      # Main search term
-                'n': '1',              # Start index
-                'm': '10',             # End index (retrieve up to 10 results)
-                'it': 'x,p,m',         # Image types: x-ray, photograph, medical image
-                'coll': 'pmc,iu,mca',  # Collections: PubMed Central, Indiana Univ, MCA
-                'fields': 't,a,msh',   # Search in title, abstract, MeSH terms
+                "query": keywords,  # Main search term
+                "n": "1",  # Start index
+                "m": "10",  # End index (retrieve up to 10 results)
+                "it": "x,p,m",  # Image types: x-ray, photograph, medical image
+                "coll": "pmc,iu,mca",  # Collections: PubMed Central, Indiana Univ, MCA
+                "fields": "t,a,msh",  # Search in title, abstract, MeSH terms
             }
-            
+
             # Make the initial search request
             response = await client.get(base_url, params=params)
             response.raise_for_status()
             search_results = response.json()
-            
+
             # Check if we have any results
-            if not search_results or 'list' not in search_results:
+            if not search_results or "list" not in search_results:
                 print("No images found in search results")
                 return None, None, None
-                
+
             # Get the first image result
-            for result in search_results['list']:
-                if 'imgLarge' in result:
-                    image_url = result['imgLarge']
-                elif 'imgThumb' in result:
-                    image_url = result['imgThumb']
+            for result in search_results["list"]:
+                if "imgLarge" in result:
+                    image_url = result["imgLarge"]
+                elif "imgThumb" in result:
+                    image_url = result["imgThumb"]
                 else:
                     continue
-                    
+
                 # Fetch the actual image
                 img_response = await client.get(image_url)
                 img_response.raise_for_status()
                 image_data = img_response.content
-                
+
                 # Use PIL to validate and get image format
                 try:
                     image = Image.open(BytesIO(image_data))
                     image_format = image.format  # Returns 'JPEG', 'PNG', etc.
-                    image_type = image.mode     # Returns 'RGB', 'RGBA', etc.
-                    
+                    image_type = image.mode  # Returns 'RGB', 'RGBA', etc.
+
                     # Convert image to bytes if needed
                     if not isinstance(image_data, bytes):
                         buffer = BytesIO()
                         image.save(buffer, format=image_format)
                         image_data = buffer.getvalue()
-                    
+
                     return image_data, image_type, image_format.lower()
-                    
+
                 except Exception as e:
                     print(f"Error processing image with PIL: {e}")
                     continue
-            
+
             # If we get here, we didn't find any valid images
             print("No valid images found in search results")
             return None, None, None
-            
+
     except Exception as e:
         print(f"Error retrieving image from NIH Open-i API: {e}")
         return None, None, None
 
 
-def load_images_into_dicom_viewer(image_data: bytes, image_type: str, image_format: str) -> bool:
-    """Loads image data into the dicom viewer. Note, that this must be implemented by you.
-    """
-    print (f"placeholder: loading image into dicom viewer of type: {image_type}, format: {image_format}")
-    return True # placeholder must implement dicom loading function
-      
-async def analyze_image_with_vision_api(image_data: bytes, image_type: str, image_format: str) -> str:
-    """Placeholder that performs analysis of the image using its vision capability and returns a string. Must be implemented by you.
-    """
+def load_images_into_dicom_viewer(
+    image_data: bytes, image_type: str, image_format: str
+) -> bool:
+    """Loads image data into the dicom viewer. Note, that this must be implemented by you."""
+    print(
+        f"placeholder: loading image into dicom viewer of type: {image_type}, format: {image_format}"
+    )
+    return True  # placeholder must implement dicom loading function
+
+
+async def analyze_image_with_vision_api(
+    image_data: bytes, image_type: str, image_format: str
+) -> str:
+    """Placeholder that performs analysis of the image using its vision capability and returns a string. Must be implemented by you."""
     # Perform analysis, returning results in a string.
-      
-    print(f"placeholder: performing analysis of image of type: {image_type}, format: {image_format}")
+
+    print(
+        f"placeholder: performing analysis of image of type: {image_type}, format: {image_format}"
+    )
     return "Analysis: no abnormalities were found"  # Sample data
+
+
+TOOL_HANDLERS = {
+    "searchMedicalImages": fetch_medical_images,  # Using the correct function name
+    "loadImageSeries": load_medical_image,  # Using the correct function name
+    "code_execution": execute_code,
+    "google_search": google_search,
+    "web_search": perform_web_search,  # Adding web search capability
+}
+
+async def handle_tool_call(ws, tool_call):
+    """
+    Dynamically process any tool call from Gemini and send back results.
+    Handles both single function calls and function call arrays.
+    """
+    print(f"🔍 Received tool call: {tool_call}")
+
+    function_calls = tool_call.get("functionCalls", [])
+    
+    # Ensure function_calls is always a list
+    if not isinstance(function_calls, list):
+        function_calls = [function_calls]
+
+    responses = []
+
+    for fc in function_calls:
+        tool_name = fc.get("name")
+        tool_func = TOOL_HANDLERS.get(tool_name)
+        fc_id = fc.get("id", "unknown")
+        args = fc.get("args", {})
+
+        if not tool_func:
+            print(f"⚠️ Unknown tool requested: {tool_name}")
+            response = {"result": {"string_value": f"Error: Unknown tool {tool_name}"}}
+        else:
+            try:
+                # If function is synchronous, run in an async thread executor
+                if asyncio.iscoroutinefunction(tool_func):
+                    result = await tool_func(args)
+                else:
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(None, tool_func, args)
+
+                # Format response correctly
+                response = format_tool_response(result)
+
+            except Exception as e:
+                print(f"❌ Error executing {tool_name}: {e}")
+                response = {"result": {"string_value": f"Error executing {tool_name}: {str(e)}"}}
+
+        responses.append({
+            "id": fc_id,
+            "name": tool_name,
+            "response": response,
+        })
+
+    msg = {"tool_response": {"function_responses": responses}}
+
+    print(f"✅ Sending response: {msg}")
+    await ws.send(json.dumps(msg))
+
+
+def format_tool_response(result):
+    """
+    Ensures tool responses are formatted correctly based on data type.
+    """
+    if isinstance(result, dict):
+        return {"struct_value": result}  # Gemini expects 'struct_value' for dicts
+    elif isinstance(result, list):
+        return {"list_value": result}  # Gemini expects 'list_value' for lists
+    elif isinstance(result, str):
+        return {"string_value": result}
+    elif isinstance(result, (int, float, bool)):  # Handle numbers and booleans
+        return {"number_value": result}
+    else:
+        return {"string_value": str(result)}  # Fallback to string conversion
+
+
+
 
 # ------------------------------------------------------------------------------
 # Task: receiving messages (JSON or binary) from Gemini and handling them
 # ------------------------------------------------------------------------------
 async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
     pa = pyaudio.PyAudio()
-    
+
     playback_stream = pa.open(
         format=pyaudio.paInt16,
         channels=NUM_CHANNELS,
         rate=OUTPUT_SAMPLE_RATE,
         output=True,
-        frames_per_buffer=CHUNK_SIZE
+        frames_per_buffer=CHUNK_SIZE,
     )
 
-    debug_wav = wave.open('debug_output.wav', 'wb')
+    debug_wav = wave.open("debug_output.wav", "wb")
     debug_wav.setnchannels(NUM_CHANNELS)
     debug_wav.setsampwidth(BYTES_PER_SAMPLE)
     debug_wav.setframerate(OUTPUT_SAMPLE_RATE)
@@ -550,9 +853,9 @@ async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
 
             if isinstance(msg, bytes):
                 try:
-                    text_msg = msg.decode('utf-8')
+                    text_msg = msg.decode("utf-8")
                     data = json.loads(text_msg)
-                    
+
                     if "serverContent" in data:
                         content = data["serverContent"]
                         if "modelTurn" in content:
@@ -562,18 +865,24 @@ async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
                                     print("Gemini:", part["text"])
                                 elif "inlineData" in part:
                                     try:
-                                        audio_data = base64.b64decode(part["inlineData"]["data"])
-                                        print(f"Received inline audio of size: {len(audio_data)} bytes")
-                                        
+                                        audio_data = base64.b64decode(
+                                            part["inlineData"]["data"]
+                                        )
+                                        print(
+                                            f"Received inline audio of size: {len(audio_data)} bytes"
+                                        )
+
                                         if not first_audio_saved:
                                             debug_wav.writeframes(audio_data)
                                             first_audio_saved = True
-                                            print(f"Saved first audio chunk to debug_output.wav")
-                                        
+                                            print(
+                                                f"Saved first audio chunk to debug_output.wav"
+                                            )
+
                                         playback_stream.write(audio_data)
                                     except Exception as e:
                                         print(f"Error processing inline audio: {e}")
-                
+
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     # If not JSON, treat as raw PCM audio data
                     print(f"Received raw audio chunk of size: {len(msg)} bytes")
@@ -582,11 +891,11 @@ async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
                             debug_wav.writeframes(msg)
                             first_audio_saved = True
                             print(f"Saved first audio chunk to debug_output.wav")
-                        
+
                         playback_stream.write(msg)
                     except Exception as e:
                         print(f"Error playing audio: {e}")
-                
+
                 continue
 
             try:
@@ -611,6 +920,7 @@ async def receive_from_gemini(ws: websockets.WebSocketClientProtocol):
         playback_stream.close()
         pa.terminate()
 
+
 async def handle_frontend_connection(websocket):
     """Handle WebSocket connections from the frontend."""
     print(f"Frontend client connected")
@@ -625,7 +935,7 @@ async def handle_frontend_connection(websocket):
                 init_resp = await gemini_ws.recv()
                 try:
                     if isinstance(init_resp, bytes):
-                        init_resp = init_resp.decode('utf-8')
+                        init_resp = init_resp.decode("utf-8")
                     data = json.loads(init_resp)
                     if "setupComplete" in data:
                         await websocket.send(json.dumps({"status": "connected"}))
@@ -648,14 +958,20 @@ async def handle_frontend_connection(websocket):
                         if isinstance(message, bytes):
                             try:
                                 # Try to decode bytes as UTF-8 JSON
-                                message = message.decode('utf-8')
+                                message = message.decode("utf-8")
                                 data = json.loads(message)
                                 await websocket.send(json.dumps(data))
                             except (UnicodeDecodeError, json.JSONDecodeError):
                                 # If not valid JSON, send as base64 encoded binary
-                                await websocket.send(json.dumps({
-                                    "binary": base64.b64encode(message).decode('utf-8')
-                                }))
+                                await websocket.send(
+                                    json.dumps(
+                                        {
+                                            "binary": base64.b64encode(message).decode(
+                                                "utf-8"
+                                            )
+                                        }
+                                    )
+                                )
                         else:
                             # Regular JSON message
                             try:
@@ -667,10 +983,7 @@ async def handle_frontend_connection(websocket):
                 except websockets.exceptions.ConnectionClosed:
                     pass
 
-            await asyncio.gather(
-                forward_to_gemini(),
-                forward_to_frontend()
-            )
+            await asyncio.gather(forward_to_gemini(), forward_to_frontend())
 
     except Exception as e:
         print(f"Error in connection handler: {e}")
@@ -682,12 +995,12 @@ async def handle_frontend_connection(websocket):
         print("Frontend client disconnected")
 
 
-
 async def start_server():
     """Start the WebSocket server for frontend connections."""
     print(f"Starting WebSocket server on port {WEB_SERVER_PORT}")
     async with serve(handle_frontend_connection, "localhost", WEB_SERVER_PORT):
         await asyncio.Future()  # run forever
+
 
 async def process_frontend_messages(websocket):
     """Process messages from frontend and forward them to Gemini."""
@@ -700,6 +1013,7 @@ async def process_frontend_messages(websocket):
     except Exception as e:
         print(f"Error processing frontend message: {e}")
 
+
 if __name__ == "__main__":
     try:
         asyncio.run(start_server())
@@ -707,3 +1021,35 @@ if __name__ == "__main__":
         print("\nExiting gracefully...")
     except Exception as e:
         print(f"Error: {e}")
+
+
+
+
+# Handling an Unknown Tool
+# 📌 Input
+
+# {
+#     "functionCalls": [
+#         {
+#             "id": "function-call-67890",
+#             "name": "unknown_tool",
+#             "args": {}
+#         }
+#     ]
+# }
+
+# 📌 Expected Response
+
+# {
+#     "tool_response": {
+#         "function_responses": [
+#             {
+#                 "id": "function-call-67890",
+#                 "name": "unknown_tool",
+#                 "response": {
+#                     "result": {"string_value": "Error: Unknown tool unknown_tool"}
+#                 }
+#             }
+#         ]
+#     }
+# }

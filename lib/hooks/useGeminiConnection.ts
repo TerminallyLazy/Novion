@@ -84,7 +84,7 @@ export function useGeminiConnection(): UseGeminiConnection {
     setup: {
       model: "models/gemini-2.0-flash-exp",
       generation_config: {
-        response_modalities: ["AUDIO"],
+        response_modalities: ["TEXT"],
         speech_config: {
           voice_config: {
             prebuilt_voice_config: {

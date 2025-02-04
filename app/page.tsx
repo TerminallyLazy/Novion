@@ -893,9 +893,9 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
         )}>
           <div className="h-full p-4">
             <Tabs defaultValue="analysis">
-              <TabsList className="grid w-full grid-cols-3 gap-1 p-1 rounded-md">
+              <TabsList className="grid w-full grid-cols-2 gap-1 p-1 rounded-md">
                 <TabsTrigger value="analysis">Analysis</TabsTrigger>
-                <TabsTrigger value="voice">Voice</TabsTrigger>
+                {/* <TabsTrigger value="voice">Voice</TabsTrigger> */}
                 <TabsTrigger value="events">Events</TabsTrigger>
               </TabsList>
 

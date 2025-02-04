@@ -122,7 +122,7 @@ export const apiClient = {
     mode,
   }: {
     query: string;
-    mode: 'text' | 'voice';
+    mode: 'text' | 'text';
   }): Promise<SearchResult> => {
     return {
       id: 'search-id',

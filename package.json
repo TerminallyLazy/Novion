@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@cornerstonejs/dicom-image-loader": "^2.19.2",
     "@prisma/client": "^6.2.1",
     "@radix-ui/react-select": "^2.1.5",
     "@radix-ui/react-slider": "^1.1.2",
