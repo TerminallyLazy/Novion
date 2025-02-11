@@ -60,6 +60,9 @@ import {
 } from '@/lib/utils/cornerstoneInit';
 
 // Add type declarations for the Web Speech API
+
+type ViewportLayout = "1x1" | "2x2" | "3x3";
+
 interface SpeechGrammar {
   src: string;
   weight: number;
@@ -219,6 +222,26 @@ interface ViewportState {
   rightPanelCollapsed: boolean;
   expandedViewport: ViewportType | null;
   theme: 'light' | 'dark';
+  loadedImages?: LoadedImage[];
+  currentImageIndex: number;
+}
+
+interface ViewportGridProps {
+  layout: ViewportLayout;
+  activeViewport: ViewportType;
+  expandedViewport: ViewportType | null;
+  onViewportChange: (viewport: ViewportType) => void;
+  onViewportExpand: (viewport: ViewportType) => void;
+  loadedImages?: LoadedImage[];
+  currentImageIndex: number;
+}
+
+interface ViewportPanelProps {
+  type: ViewportType;
+  isActive: boolean;
+  isExpanded: boolean;
+  onActivate: () => void;
+  onToggleExpand: () => void;
   loadedImages?: LoadedImage[];
   currentImageIndex: number;
 }
@@ -521,16 +544,6 @@ function TopToolbar({
   );
 }
 
-interface ViewportGridProps {
-  layout: ViewportLayout;
-  activeViewport: ViewportType;
-  expandedViewport: ViewportType | null;
-  onViewportChange: (viewport: ViewportType) => void;
-  onViewportExpand: (viewport: ViewportType) => void;
-  loadedImages?: LoadedImage[];
-  currentImageIndex: number;
-}
-
 function ViewportGrid({ 
   layout, 
   activeViewport, 
@@ -601,16 +614,6 @@ function ViewportGrid({
   );
 }
 
-interface ViewportPanelProps {
-  type: ViewportType;
-  isActive: boolean;
-  isExpanded: boolean;
-  onActivate: () => void;
-  onToggleExpand: () => void;
-  loadedImages?: LoadedImage[];
-  currentImageIndex: number;
-}
-
 function ViewportPanel({ 
   type, 
   isActive, 
@@ -621,7 +624,6 @@ function ViewportPanel({
   currentImageIndex
 }: ViewportPanelProps) {
   const [loadError, setLoadError] = useState<string>();
-  //const { loadedImages, currentImageIndex } = viewportState;
 
   const currentImageId = useMemo(() => {
     if (!loadedImages || loadedImages.length === 0) return undefined;
@@ -1071,46 +1073,40 @@ function DetachedEventLog({ onAttach }: { onAttach: () => void }) {
 function App() {
   const [showMediaControls, setShowMediaControls] = useState(true);
   const [isEventLogDetached, setIsEventLogDetached] = useState(false);
-  const [viewportState, setViewportState] = useState<ViewportState>({
-    activeViewport: "AXIAL",
-    layout: "2x2",
-    leftPanelCollapsed: false,
-    rightPanelCollapsed: false,
-    expandedViewport: null,
-    theme: "dark",
-    currentImageIndex: 0,
-    loadedImages: []
-  });
-
-  const { 
-    activeViewport, 
-    layout, 
-    leftPanelCollapsed,
-    rightPanelCollapsed,
-    expandedViewport,
-    theme
-  } = viewportState;
+  const [activeViewport, setActiveViewport] = useState("AXIAL");
+  const [layout, setLayout] = useState("2x2");
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [theme, setTheme] = useState('dark');
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [loadedImages, setLoadedImages] = useState([]);
 
   const DEFAULT_PANEL_WIDTH = 320;
   const COLLAPSED_PANEL_WIDTH = 48;
+
+  const panelWidth = (collapsed) => collapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH;
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
-  const handleThemeChange = (newTheme: 'light' | 'dark') => {
-    setViewportState(prev => ({
-      ...prev,
-      theme: newTheme
-    }));
-  };
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      initializeCornerstone();
+      cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
+      cornerstoneWADOImageLoader.configure({
+        beforeSend: (xhr) => {
+          // maybe add headers
+        },
+      });
+    }
+  }, []);
 
-  const handleLayoutChange = (newLayout: ViewportLayout) => {
-    setViewportState(prev => ({
-      ...prev,
-      layout: newLayout,
-      expandedViewport: null // Reset expanded state when changing layout
-    }));
+  const handleThemeChange = (newTheme) => setTheme(newTheme);
+
+  const handleLayoutChange = (newLayout) => {
+    setLayout(newLayout);
+    setActiveViewport(null);
   };
 
   const handleFullscreenToggle = () => {
@@ -1121,25 +1117,9 @@ function App() {
     }
   };
 
-  const handleViewportExpand = (viewport: ViewportType) => {
-    setViewportState(prev => ({
-      ...prev,
-      expandedViewport: prev.expandedViewport === viewport ? null : viewport
-    }));
+  const handleViewportExpand = (viewport) => {
+    setActiveViewport((prev) => (prev === viewport ? null : viewport));
   };
-
-  // Initialize cornerstone WADO image loader
-  cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-  cornerstoneWADOImageLoader.configure({
-    beforeSend: (xhr: XMLHttpRequest) => {
-      // Add any headers or configurations needed for your WADO server
-    }
-  });
-
-  // Initialize cornerstone when the app starts
-  if (typeof window !== 'undefined') {
-    initializeCornerstone();
-  }
 
   return (
     <div className="medical-viewer w-screen h-screen overflow-hidden">
@@ -1147,25 +1127,21 @@ function App() {
       {isEventLogDetached && (
         <DetachedEventLog onAttach={() => setIsEventLogDetached(false)} />
       )}
-      {/* Left Panel */}
       <Panel
         className="fixed top-0 bottom-0 left-0 bg-card border-r border-border z-40"
-        width={leftPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH}
+        width={panelWidth(leftPanelCollapsed)}
       >
         <LeftToolbar
           isExpanded={!leftPanelCollapsed}
-          onExpandedChange={(expanded) => 
-            setViewportState(prev => ({ ...prev, leftPanelCollapsed: !expanded }))
-          }
+          onExpandedChange={(expanded) => setLeftPanelCollapsed(!expanded)}
         />
       </Panel>
 
-      {/* Main Content */}
       <div
         className="fixed top-0 bottom-0 transition-all duration-200"
         style={{
-          left: `${leftPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH}px`,
-          right: `${rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH}px`,
+          left: `${panelWidth(leftPanelCollapsed)}px`,
+          right: `${panelWidth(rightPanelCollapsed)}px`,
         }}
       >
         <TopToolbar 
@@ -1179,33 +1155,42 @@ function App() {
           <ViewportGrid 
             layout={layout}
             activeViewport={activeViewport}
-            expandedViewport={expandedViewport}
-            onViewportChange={(viewport) => 
-              setViewportState(prev => ({ ...prev, activeViewport: viewport }))
-            }
+            expandedViewport={activeViewport}
+            onViewportChange={setActiveViewport}
             onViewportExpand={handleViewportExpand}
-            loadedImages={viewportState.loadedImages}
-            currentImageIndex={viewportState.currentImageIndex}
+            loadedImages={loadedImages}
+            currentImageIndex={currentImageIndex}
           />
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div 
+      <Panel
         className="fixed top-0 bottom-0 right-0 z-40 bg-[#141a29] border-l border-[#1b2538] shadow-lg"
-        style={{
-          width: rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH
-        }}
+        width={panelWidth(rightPanelCollapsed)}
       >
         <RightPanel
           isExpanded={!rightPanelCollapsed}
-          onExpandedChange={(expanded) => 
-            setViewportState(prev => ({ ...prev, rightPanelCollapsed: !expanded }))
-          }
-          viewportState={viewportState}
-          setViewportState={setViewportState}
+          onExpandedChange={(expanded) => setRightPanelCollapsed(!expanded)}
+          viewportState={{
+            activeViewport,
+            layout,
+            leftPanelCollapsed,
+            rightPanelCollapsed,
+            theme,
+            currentImageIndex,
+            loadedImages,
+          }}
+          setViewportState={(newState) => {
+            setActiveViewport(newState.activeViewport ?? activeViewport);
+            setLayout(newState.layout ?? layout);
+            setLeftPanelCollapsed(newState.leftPanelCollapsed ?? leftPanelCollapsed);
+            setRightPanelCollapsed(newState.rightPanelCollapsed ?? rightPanelCollapsed);
+            setTheme(newState.theme ?? theme);
+            setCurrentImageIndex(newState.currentImageIndex ?? currentImageIndex);
+            setLoadedImages(newState.loadedImages ?? loadedImages);
+          }}
         />
-      </div>
+      </Panel>
     </div>
   );
 }
