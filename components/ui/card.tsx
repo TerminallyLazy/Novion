@@ -3,16 +3,16 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+const cardBaseClass = "rounded-lg border bg-card text-card-foreground shadow-sm";
+const cardBodyBaseClass = "p-6";
+
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn(
-      "rounded-lg border bg-card text-card-foreground shadow-sm",
-      className
-    )}
+    className={cn(cardBaseClass, className)}
     {...props}
   />
 ));
@@ -24,10 +24,10 @@ const CardBody = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("p-6", className)}
+    className={cn(cardBodyBaseClass, className)}
     {...props}
   />
 ));
 CardBody.displayName = "CardBody";
 
-export { Card, CardBody }; 
+export { Card, CardBody };

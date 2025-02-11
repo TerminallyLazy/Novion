@@ -43,8 +43,11 @@ export function ImageSeriesUpload({
     accept: {
       'application/dicom': ['.dcm', '.DCM'],
       'image/dicom': ['.dcm', '.DCM'],
-      'image/png': ['.png', '.PNG']
+      'image/png': ['.png', '.PNG'],
+      'application/nifti': ['.nii', '.nii.gz'],
+      'image/nifti': ['.nii', '.nii.gz'] 
     },
+  
     onDragEnter: undefined,
     onDragOver: undefined,
     onDragLeave: undefined
