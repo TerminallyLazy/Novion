@@ -22,7 +22,7 @@ export function CustomToolButton({
 
   return (
     <div 
-      className="relative" 
+      className="relative w-full" 
       onMouseEnter={() => setShowTooltip(true)} 
       onMouseLeave={() => setShowTooltip(false)}
     >
@@ -30,16 +30,21 @@ export function CustomToolButton({
         type="button"
         onClick={onClick}
         className={cn(
-          'tool-button',
-          active && 'tool-button-active',
+          'relative w-full h-full flex flex-col items-center justify-center p-3.5 rounded-md transition-all duration-200',
+          'bg-[#f8fafc] dark:bg-[#161d2f]',
+          'border border-[#e2e8f0] dark:border-[#1b2538]',
+          'text-gray-700 dark:text-foreground/80',
+          'hover:bg-gray-100 dark:hover:bg-[#1b2237]',
+          'hover:text-[#4cedff] dark:hover:text-[#4cedff]',
+          active && 'bg-[#4cedff]/10 dark:bg-[#4cedff]/10 border-[#4cedff] text-[#4cedff]',
           className
         )}
         aria-label={label}
       >
-        <div className="relative">
-          <Icon className={cn('h-5 w-5 transition-transform duration-200', active && 'scale-110')} />
+        <div className="relative inline-flex items-center justify-center">
+          <Icon className={cn('h-6 w-6 transition-transform duration-200', active && 'scale-110')} />
           {active && (
-            <div className="absolute -top-2 -right-2 w-2 h-2 bg-primary rounded-full shadow-lg animate-pulse" />
+            <div className="absolute -top-2 -right-2 w-2 h-2 bg-[#4cedff] rounded-full shadow-lg animate-pulse" />
           )}
         </div>
       </button>
@@ -49,21 +54,21 @@ export function CustomToolButton({
         <div 
           className={cn(
             'absolute bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 px-3 py-1.5 mb-2',
-            'bg-card/95 backdrop-blur-sm border shadow-md rounded-md z-50',
-            'text-sm font-medium text-foreground whitespace-nowrap'
+            'bg-white dark:bg-[#161d2f] backdrop-blur-sm',
+            'border border-[#e2e8f0] dark:border-[#1b2538]',
+            'shadow-md rounded-md z-50',
+            'text-sm font-medium text-center text-gray-700 dark:text-foreground/80 whitespace-nowrap'
           )}
           style={{ pointerEvents: 'none' }}
         >
           {label}
           <div 
-            className="absolute left-1/2 top-full transform -translate-x-1/2 -translate-y-1/2 rotate-45"
-            style={{
-              width: '8px',
-              height: '8px',
-              backgroundColor: 'var(--card)',
-              borderBottom: '1px solid var(--border)',
-              borderRight: '1px solid var(--border)',
-            }}
+            className={cn(
+              'absolute left-1/2 top-full transform -translate-x-1/2 -translate-y-1/2 rotate-45',
+              'w-2 h-2',
+              'bg-white dark:bg-[#161d2f]',
+              'border-b border-r border-[#e2e8f0] dark:border-[#1b2538]'
+            )}
           />
         </div>
       )}
@@ -79,17 +84,15 @@ export function CustomToolGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-border/50 pb-6 mb-6">
-      <h3 className="text-sm font-semibold mb-4 px-2 text-foreground tracking-wide uppercase">
+    <div className="mb-6">
+      <h3 className="text-sm font-semibold mb-4 px-2 text-gray-700 dark:text-foreground/80 tracking-wide uppercase">
         {title}
       </h3>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 px-2">
+      <div className="grid grid-cols-4 gap-2 px-2">
         {React.Children.map(children, (child) => (
-          <div className="flex items-center justify-center relative">
-            <div className="relative w-full flex justify-center">
-              {child}
-            </div>
+          <div className="w-full">
+            {child}
           </div>
         ))}
       </div>

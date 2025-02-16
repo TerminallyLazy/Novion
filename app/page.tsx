@@ -1,11 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRealtimeMutation } from "@/lib/utils";
 import { useToast } from "@/lib/use-toast";
 import { apiClient } from "@/lib/api";
 import { MediaControlPanel } from '@/components/MediaControlPanel';
-import type { inferRPCInputType, inferRPCOutputType } from "@/lib/api/index";
 import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { CustomToolButton, CustomToolGroup } from '@/components/CustomToolButton';
 import { Panel } from '@/components/Panel';
@@ -40,12 +37,7 @@ import {
   ZoomIn,
   X,
 } from "lucide-react";
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Card, CardBody } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { DicomViewer } from '@/components/DicomViewer';
 import Image from 'next/image';
@@ -58,96 +50,6 @@ import {
   initializeCornerstone, 
   loadAndCacheImage
 } from '@/lib/utils/cornerstoneInit';
-
-// Add type declarations for the Web Speech API
-interface SpeechGrammar {
-  src: string;
-  weight: number;
-}
-
-interface SpeechGrammarList {
-  length: number;
-  addFromString(string: string, weight?: number): void;
-  addFromURI(src: string, weight?: number): void;
-  item(index: number): SpeechGrammar;
-  [index: number]: SpeechGrammar;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error:
-    | "not-allowed"
-    | "no-speech"
-    | "network"
-    | "aborted"
-    | "audio-capture"
-    | "service-not-allowed";
-  message: string;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-  interpretation: any;
-  emma: Document | null;
-}
-
-interface SpeechRecognitionResultList {
-  [index: number]: SpeechRecognitionResult;
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  [index: number]: SpeechRecognitionAlternative;
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-  isFinal: boolean;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  grammars: SpeechGrammarList;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onerror:
-    | ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any)
-    | null;
-  onnomatch:
-    | ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any)
-    | null;
-  onresult:
-    | ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any)
-    | null;
-  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognition;
-  prototype: SpeechRecognition;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition: SpeechRecognitionConstructor;
-    webkitSpeechRecognition: SpeechRecognitionConstructor;
-  }
-}
 
 // Viewport types
 type ViewportLayout = "1x1" | "2x2" | "3x3";
@@ -169,7 +71,7 @@ type Tool =
   | "compare"
   | null;
 
-type AIModel = "mammogram" | "brain-mri" | "chest-xray";
+// type AIModel = "mammogram" | "brain-mri" | "chest-xray";
 
 type AIResult = {
   type: string;
@@ -248,15 +150,15 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
 
   return (
     <Panel
-      className="h-full flex flex-col shadow-md overflow-hidden relative bg-white dark:bg-card"
+      className={cn("h-full flex flex-col shadow-md overflow-hidden relative bg-white dark:bg-[#1b2237]", "border-gray-200 dark:border-[#1b2237]")}
       width={isExpanded ? 320 : 48}
     >
-      <div className="flex items-center justify-between h-12 px-4 border-b border-[#e4e7ec] dark:border-[#2D3848]">
+      <div className="flex items-center justify-between h-12 px-4 border-b border-[#e4e7ec] dark:border-[#1b2237]">
         <span className={cn("font-medium truncate text-center w-full", !isExpanded && "opacity-0")}>
           Tools
         </span>
         <button
-          className="p-2 hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
+          className="p-2 hover:bg-[#f4f6f8] dark:hover:bg-[#1b2237] rounded-md text-gray-600 dark:text-foreground/80 hover:text-[#4cedff]"
           onClick={() => onExpandedChange(!isExpanded)}
           aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
         >
@@ -272,155 +174,157 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
         "flex-1 overflow-y-auto transition-all duration-200",
         !isExpanded && "opacity-0"
       )}>
-        <div className="tool-section border-b border-[#e4e7ec] dark:border-[#2D3848]">
-          <h3 className="tool-section-title text-[#64748b] dark:text-foreground/60">View</h3>
-          <div className="tool-grid">
-            <CustomToolButton
-              icon={Move}
-              label="Pan"
-              active={activeTool === "pan"}
-              onClick={() => handleToolClick("pan")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={ZoomIn}
-              label="Zoom"
-              active={activeTool === "zoom"}
-              onClick={() => handleToolClick("zoom")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Sun}
-              label="Window"
-              active={activeTool === "window"}
-              onClick={() => handleToolClick("window")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={ContrastIcon}
-              label="Level"
-              active={activeTool === "level"}
-              onClick={() => handleToolClick("level")}
-              className="flex justify-center items-center"
-            />
+        <div className="space-y-6 p-2">
+          <div>
+            <h3 className="text-[#64748b] dark:text-foreground/60 text-sm text-center font-semibold mb-4">View</h3>
+            <div className="grid grid-cols-4 gap-2">
+              <CustomToolButton
+                icon={Move}
+                label="Pan"
+                active={activeTool === "pan"}
+                onClick={() => handleToolClick("pan")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={ZoomIn}
+                label="Zoom"
+                active={activeTool === "zoom"}
+                onClick={() => handleToolClick("zoom")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Sun}
+                label="Window"
+                active={activeTool === "window"}
+                onClick={() => handleToolClick("window")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={ContrastIcon}
+                label="Level"
+                active={activeTool === "level"}
+                onClick={() => handleToolClick("level")}
+                className="w-full"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="tool-section">
-          <h3 className="tool-section-title">Measure</h3>
-          <div className="tool-grid">
-            <CustomToolButton
-              icon={Ruler}
-              label="Distance"
-              active={activeTool === "distance"}
-              onClick={() => handleToolClick("distance")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Square}
-              label="Area"
-              active={activeTool === "area"}
-              onClick={() => handleToolClick("area")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Gauge}
-              label="Angle"
-              active={activeTool === "angle"}
-              onClick={() => handleToolClick("angle")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={ScanLine}
-              label="Profile"
-              active={activeTool === "profile"}
-              onClick={() => handleToolClick("profile")}
-              className="flex justify-center items-center"
-            />
+          <div>
+            <h3 className="text-[#64748b] dark:text-foreground/60 text-center text-sm font-semibold mb-4">Measure</h3>
+            <div className="grid grid-cols-4 gap-2">
+              <CustomToolButton
+                icon={Ruler}
+                label="Distance"
+                active={activeTool === "distance"}
+                onClick={() => handleToolClick("distance")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Square}
+                label="Area"
+                active={activeTool === "area"}
+                onClick={() => handleToolClick("area")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Gauge}
+                label="Angle"
+                active={activeTool === "angle"}
+                onClick={() => handleToolClick("angle")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={ScanLine}
+                label="Profile"
+                active={activeTool === "profile"}
+                onClick={() => handleToolClick("profile")}
+                className="w-full"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="tool-section">
-          <h3 className="tool-section-title">Analyze</h3>
-          <div className="tool-grid">
-            <CustomToolButton
-              icon={Stethoscope}
-              label="Diagnose"
-              active={activeTool === "diagnose"}
-              onClick={() => handleToolClick("diagnose")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={LineChart}
-              label="Statistics"
-              active={activeTool === "statistics"}
-              onClick={() => handleToolClick("statistics")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Crop}
-              label="Segment"
-              active={activeTool === "segment"}
-              onClick={() => handleToolClick("segment")}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={ArrowLeftRight}
-              label="Compare"
-              active={activeTool === "compare"}
-              onClick={() => handleToolClick("compare")}
-              className="flex justify-center items-center"
-            />
+          <div>
+            <h3 className="text-[#64748b] dark:text-foreground/60 text-center text-sm font-semibold mb-4">Analyze</h3>
+            <div className="grid grid-cols-4 gap-2">
+              <CustomToolButton
+                icon={Stethoscope}
+                label="Diagnose"
+                active={activeTool === "diagnose"}
+                onClick={() => handleToolClick("diagnose")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={LineChart}
+                label="Statistics"
+                active={activeTool === "statistics"}
+                onClick={() => handleToolClick("statistics")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Crop}
+                label="Segment"
+                active={activeTool === "segment"}
+                onClick={() => handleToolClick("segment")}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={ArrowLeftRight}
+                label="Compare"
+                active={activeTool === "compare"}
+                onClick={() => handleToolClick("compare")}
+                className="w-full"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="tool-section">
-          <h3 className="tool-section-title">Tools</h3>
-          <div className="tool-grid">
-            <CustomToolButton
-              icon={Download}
-              label="Export"
-              onClick={() => {
-                toast({
-                  title: "Export",
-                  description: "Exporting current view...",
-                });
-              }}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Share2}
-              label="Share"
-              onClick={() => {
-                toast({
-                  title: "Share",
-                  description: "Opening share dialog...",
-                });
-              }}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={FileImage}
-              label="Screenshot"
-              onClick={() => {
-                toast({
-                  title: "Screenshot",
-                  description: "Taking screenshot...",
-                });
-              }}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Settings}
-              label="Settings"
-              onClick={() => {
-                toast({
-                  title: "Settings",
-                  description: "Opening settings...",
-                });
-              }}
-              className="flex justify-center w-fullitems-center"
-            />
+          <div>
+            <h3 className="text-[#64748b] dark:text-foreground/60 text-center text-sm font-semibold mb-4">Tools</h3>
+            <div className="grid grid-cols-4 gap-2">
+              <CustomToolButton
+                icon={Download}
+                label="Export"
+                onClick={() => {
+                  toast({
+                    title: "Export",
+                    description: "Exporting current view...",
+                  });
+                }}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Share2}
+                label="Share"
+                onClick={() => {
+                  toast({
+                    title: "Share",
+                    description: "Opening share dialog...",
+                  });
+                }}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={FileImage}
+                label="Screenshot"
+                onClick={() => {
+                  toast({
+                    title: "Screenshot",
+                    description: "Taking screenshot...",
+                  });
+                }}
+                className="w-full"
+              />
+              <CustomToolButton
+                icon={Settings}
+                label="Settings"
+                onClick={() => {
+                  toast({
+                    title: "Settings",
+                    description: "Opening settings...",
+                  });
+                }}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -458,7 +362,7 @@ function TopToolbar({
   };
 
   return (
-    <div className="h-12 px-4 flex items-center justify-between bg-white dark:bg-[#141a29] border-b border-[#e2e8f0] dark:border-[#1b2538]">
+    <div className="h-12 px-4 flex items-center justify-between bg-white dark:bg-[#1b2237] border-b border-[#e2e8f0] dark:border-[#1b2538]">
       <div className="top-header-section">
         <button
           className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#161d2f] border-[#e2e8f0] dark:border-[#1b2538]"
@@ -492,7 +396,7 @@ function TopToolbar({
 
       <div className="top-header-section">
         <button
-          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#141a29] border-[#e2e8f0] dark:border-[#1b2538]"
+          className="tool-button !w-8 !h-8 bg-[#f8fafc] dark:bg-[#1b2237] border-[#e2e8f0] dark:border-[#1b2538]"
           onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
           aria-label="Toggle theme"
         >
@@ -854,10 +758,15 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
 
   return (
     <>
-      <div className="h-full flex flex-col text-center bg-[#141a29]">
-        <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
+      <div className={cn("h-full flex flex-col shadow-md overflow-hidden relative bg-white dark:bg-[#1b2237]", "border-gray-200 dark:border-[#1b2237]")}>
+      <div className="flex items-center justify-between h-12 px-4 border-b border-[#e4e7ec] dark:border-[#1b2237]">
           <button
-            className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
+            className={cn(
+              "p-2 rounded-md",
+              "hover:bg-gray-100 dark:hover:bg-[#2D3848]",
+              "text-gray-600 dark:text-foreground/80",
+              "hover:text-gray-900 dark:hover:text-[#1b2237]"
+            )}
             onClick={() => onExpandedChange(!isExpanded)}
           >
             {isExpanded ? (
@@ -870,15 +779,18 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
             Analysis
           </span>
         </div>
-        <div className="px-4 py-2 border-b border-[#2D3848]">
+        <div className={cn("px-4 py-2 border-b border-[#2D3848]", "dark:border-[#1b2237]")}>
           {currentSeries && (
             <button
               onClick={handleLoadSeries}
               type="button"
               className={cn(
                 "w-full px-4 py-2 rounded-md transition-colors duration-200",
-                "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2538]",
-                "bg-[#2D3848] text-[#4cedff] hover:bg-[#374357]",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2",
+                "focus:ring-offset-white dark:focus:ring-offset-[#1b2538]",
+                "bg-gray-100 dark:bg-[#2D3848]",
+                "text-gray-900 dark:text-[#4cedff]",
+                "hover:bg-gray-200 dark:hover:bg-[#1b2237]",
                 "flex items-center justify-center gap-2"
               )}
             >
@@ -902,26 +814,37 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
               <TabsContent value="analysis" className="mt-4">
                 <div className="space-y-4">
                   <ImageSeriesUpload onUploadComplete={handleUploadComplete} />
-                  <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                    <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                  <div className={cn(
+                    "flex flex-col h-[300px] rounded-md",
+                    "bg-gray-50 dark:bg-[#161d2f] hover:bg-gray-50"
+                  )}>
+                    <div className={cn(
+                      "flex items-center justify-between p-2 border-b",
+                      "border-gray-200 dark:border-[#64447]"
+                    )}>
                       <span className="text-sm font-medium">Chat</span>
                       <button
                         onClick={() => setIsChatExpanded(!isChatExpanded)}
-                        className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                        className={cn(
+                          "p-1.5 rounded-md",
+                          "hover:bg-gray-100 dark:hover:bg-[#64447]",
+                          "text-gray-600 dark:text-foreground/80",
+                          "hover:text-gray-900 dark:hover:text-[#4cedff]"
+                        )}
                         title={isChatExpanded ? "Minimize chat" : "Expand chat"}
                       >
                         <Maximize2 className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4">
+                    <div className="flex-1 bg-[#161d2f] overflow-y-auto p-4">
                       {messages.map((msg, i) => (
                         <div
                           key={i}
                           className={cn(
                             "p-2 rounded-lg max-w-[80%] mb-2",
                             msg.role === 'user' 
-                              ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-                              : "bg-[#2D3848] text-foreground/80"
+                              ? "bg-blue-500 dark:bg-[#1b2237] text-white dark:text-[#1b2237] ml-auto" 
+                              : "bg-gray-100 dark:bg-[#2D3848] text-gray-900 dark:text-foreground/80"
                           )}
                         >
                           {msg.content}
@@ -929,7 +852,10 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                       ))}
                       <div ref={chatEndRef} />
                     </div>
-                    <div className="flex gap-2 p-2 border-t border-[#2D3848]">
+                    <div className={cn(
+                      "flex gap-2 p-2 border-t",
+                      "border-gray-200 dark:border-[#2D3848]"
+                    )}>
                       <input
                         ref={inputRef}
                         type="text"
@@ -937,7 +863,14 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a message..."
-                        className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                        className={cn(
+                          "min-w-0 flex-1 px-3 py-2 rounded-md",
+                          "bg-white dark:bg-[#2D3848]",
+                          "border-gray-300 dark:border-[#4D5867]",
+                          "text-gray-900 dark:text-foreground",
+                          "focus:outline-none focus:ring-2 focus:ring-[#4cedff] dark:focus:ring-[#4cedff]",
+                          "focus:border-transparent"
+                        )}
                         autoComplete="off"
                       />
                       <button
@@ -946,10 +879,13 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                         disabled={!message.trim()}
                         className={cn(
                           "shrink-0 px-4 py-2 rounded-md transition-colors duration-200",
-                          "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]",
-                          message.trim() 
-                            ? "bg-[#4cedff] text-[#1b2237] hover:bg-[#4cedff]/90" 
-                            : "bg-[#2D3848] text-foreground/50 cursor-not-allowed"
+                          "focus:outline-none focus:ring-2",
+                          "focus:ring-blue-500 dark:focus:ring-[#4cedff]",
+                          "focus:ring-offset-2",
+                          "focus:ring-offset-white dark:focus:ring-offset-[#1b2237]",
+                          message.trim()
+                            ? "bg-[#4cedff] dark:bg-[#4cedff] text-white dark:text-[#1b2237] hover:bg-blue-600 dark:hover:bg-[#4cedff]/90"
+                            : "bg-gray-100 dark:bg-[#2D3848] text-gray-400 dark:text-foreground/50 cursor-not-allowed"
                         )}
                       >
                         Send
@@ -964,12 +900,23 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
               </TabsContent>
 
               <TabsContent value="events" className="mt-4">
-                <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                  <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                <div className={cn(
+                  "flex flex-col h-[300px] rounded-md",
+                  "bg-gray-50 dark:bg-[#1b2237]"
+                )}>
+                  <div className={cn(
+                    "flex items-center justify-between p-2 border-b",
+                    "border-gray-200 dark:border-[#2D3848]"
+                  )}>
                     <span className="text-sm font-medium">Event Log</span>
                     <button
                       onClick={() => setIsEventLogDetached(!isEventLogDetached)}
-                      className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                      className={cn(
+                        "p-1.5 rounded-md",
+                        "hover:bg-gray-100 dark:hover:bg-[#2D3848]",
+                        "text-gray-600 dark:text-foreground/80",
+                        "hover:text-gray-900 dark:hover:text-[#4cedff]"
+                      )}
                     >
                       {isEventLogDetached ? "Attach" : "Detach"}
                     </button>
@@ -1192,7 +1139,7 @@ function App() {
 
       {/* Right Panel */}
       <div 
-        className="fixed top-0 bottom-0 right-0 z-40 bg-[#141a29] border-l border-[#1b2538] shadow-lg"
+        className="fixed top-0 bottom-0 right-0 z-40 bg-[#1b2237] shadow-lg"
         style={{
           width: rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH
         }}
