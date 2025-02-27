@@ -1,3 +1,5 @@
 .env.local
 *.pyc
 *.png
+
+__pycache__/
