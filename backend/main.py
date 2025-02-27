@@ -10,15 +10,17 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 
 from tools.medications import get_drug_use_cases, search_drugs_for_condition
-from tools.summit import shravya, nisha, jojo, sally
+from tools.medical_info import search_wikem
 
 from IPython.display import display, Image
 
 from dotenv import load_dotenv
 
+import re
+
 load_dotenv(dotenv_path=".env.local")
 
-members = ["pharmacist"]
+members = ["pharmacist", "medical_analyst"]
 # Our team supervisor is an LLM node. It just picks the next agent to process
 # and decides when the work is completed
 options = members + ["FINISH"]
@@ -35,7 +37,7 @@ system_prompt = (
 class Router(TypedDict):
     """Worker to route to next. If no workers needed, route to FINISH."""
 
-    next: Literal[*options]
+    next: Literal["pharmacist", "medical_analyst", "FINISH"]
 
 
 llm = ChatOpenAI(model="gpt-4o-mini")
@@ -45,10 +47,16 @@ class State(MessagesState):
     next: str
 
 
-def supervisor_node(state: State) -> Command[Literal[*members, "__end__"]]:
+def supervisor_node(state: State) -> Command[Literal["pharmacist", "medical_analyst", "__end__"]]:
     messages = [
         {"role": "system", "content": system_prompt},
     ] + state["messages"]
+
+    # Ensure all names in messages conform to the pattern
+    for message in messages:
+        if 'name' in message:
+            message['name'] = re.sub(r'[^a-zA-Z0-9_-]', '_', message['name'])
+
     response = llm.with_structured_output(Router).invoke(messages)
     goto = response["next"]
     if goto == "FINISH":
@@ -56,32 +64,35 @@ def supervisor_node(state: State) -> Command[Literal[*members, "__end__"]]:
 
     return Command(goto=goto, update={"next": goto})
 
+
 pharamcist_agent = create_react_agent(
     llm, tools=[get_drug_use_cases, search_drugs_for_condition]
 )
+
 
 def pharmacist_node(state: State) -> Command[Literal["supervisor"]]:
     result = pharamcist_agent.invoke(state)
     return Command(
         update={
             "messages": [
-                HumanMessage(content=result["messages"][-1].content, name="pharmacist")
+                HumanMessage(content=result["messages"]
+                             [-1].content, name="pharmacist")
             ]
         },
         goto="supervisor",
     )
 
 
-# NOTE: THIS PERFORMS ARBITRARY CODE EXECUTION, WHICH CAN BE UNSAFE WHEN NOT SANDBOXED
-summit_info_agent = create_react_agent(llm, tools=[shravya, nisha, jojo, sally])
+medical_analyst_agent = create_react_agent(llm, tools=[search_wikem])
 
 
-def summit_node(state: State) -> Command[Literal["supervisor"]]:
-    result = summit_info_agent.invoke(state)
+def medical_analyst_node(state: State) -> Command[Literal["supervisor"]]:
+    result = medical_analyst_agent.invoke(state)
     return Command(
         update={
             "messages": [
-                HumanMessage(content=result["messages"][-1].content, name="summitter")
+                HumanMessage(content=result["messages"]
+                             [-1].content, name="medical_analyst")
             ]
         },
         goto="supervisor",
@@ -92,13 +103,12 @@ builder = StateGraph(State)
 builder.add_edge(START, "supervisor")
 builder.add_node("supervisor", supervisor_node)
 builder.add_node("pharmacist", pharmacist_node)
-builder.add_node("summitter", summit_node)
+builder.add_node("medical_analyst", medical_analyst_node)
 graph = builder.compile()
 
-
-#graph_image = graph.get_graph().draw_mermaid_png()
-#with open("graph_image.png", "wb") as f:
-#    f.write(graph_image)
+graph_image = graph.get_graph().draw_mermaid_png()
+with open("graph_image.png", "wb") as f:
+    f.write(graph_image)
 
 
 for s in graph.stream(
@@ -106,7 +116,7 @@ for s in graph.stream(
         "messages": [
             (
                 "user",
-                "What are some medications for pneumonia?",
+                "Come up with a treatment plan for pneumonia",
             )
         ]
     },
