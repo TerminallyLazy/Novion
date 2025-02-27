@@ -11,16 +11,15 @@ from langgraph.prebuilt import create_react_agent
 
 from tools.medications import get_drug_use_cases, search_drugs_for_condition
 from tools.medical_info import search_wikem
+from tools.researcher import search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text
 
 from IPython.display import display, Image
 
 from dotenv import load_dotenv
 
-import re
+load_dotenv(dotenv_path="../.env.local")
 
-load_dotenv(dotenv_path=".env.local")
-
-members = ["pharmacist", "medical_analyst"]
+members = ["pharmacist", "researcher", "medical_analyst"]
 # Our team supervisor is an LLM node. It just picks the next agent to process
 # and decides when the work is completed
 options = members + ["FINISH"]
@@ -37,7 +36,7 @@ system_prompt = (
 class Router(TypedDict):
     """Worker to route to next. If no workers needed, route to FINISH."""
 
-    next: Literal["pharmacist", "medical_analyst", "FINISH"]
+    next: Literal["pharmacist", "researcher", "medical_analyst", "FINISH"]
 
 
 llm = ChatOpenAI(model="gpt-4o-mini")
@@ -47,7 +46,7 @@ class State(MessagesState):
     next: str
 
 
-def supervisor_node(state: State) -> Command[Literal["pharmacist", "medical_analyst", "__end__"]]:
+def supervisor_node(state: State) -> Command[Literal["pharmacist", "researcher", "medical_analyst", "__end__"]]:
     messages = [
         {"role": "system", "content": system_prompt},
     ] + state["messages"]
@@ -82,6 +81,9 @@ def pharmacist_node(state: State) -> Command[Literal["supervisor"]]:
         goto="supervisor",
     )
 
+researcher_agent = create_react_agent(
+    llm, tools=[search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text]
+)
 
 medical_analyst_agent = create_react_agent(llm, tools=[search_wikem])
 
@@ -93,17 +95,28 @@ def medical_analyst_node(state: State) -> Command[Literal["supervisor"]]:
             "messages": [
                 HumanMessage(content=result["messages"]
                              [-1].content, name="medical_analyst")
+                ]
+            },
+            goto="supervisor",
+    )
+
+def researcher_node(state: State) -> Command[Literal["supervisor"]]:
+    result = researcher_agent.invoke(state)
+    return Command(
+        update={
+            "messages": [
+                HumanMessage(content=result["messages"][-1].content, name="researcher")
             ]
         },
         goto="supervisor",
     )
-
 
 builder = StateGraph(State)
 builder.add_edge(START, "supervisor")
 builder.add_node("supervisor", supervisor_node)
 builder.add_node("pharmacist", pharmacist_node)
 builder.add_node("medical_analyst", medical_analyst_node)
+builder.add_node("researcher", researcher_node)
 graph = builder.compile()
 
 graph_image = graph.get_graph().draw_mermaid_png()
@@ -116,7 +129,7 @@ for s in graph.stream(
         "messages": [
             (
                 "user",
-                "Come up with a treatment plan for pneumonia",
+                "What are some current trends in medical imaging?",
             )
         ]
     },

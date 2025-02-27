@@ -1,11 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
 from pprint import pprint
+from langchain.tools import tool
 
-
+@tool("Search_PubMed_and_return_PMIDs")
 def search_pubmed(query, retmax=10):
     """
-    Search PubMed for the given query and return a list of PMIDs.
+    Description: Search PubMed for the given query and return a list of PMIDs.
+    -Input: Query (str)
+    -Output: PMIDs (list)
     """
     esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
@@ -19,9 +22,10 @@ def search_pubmed(query, retmax=10):
     data = response.json()
     return data["esearchresult"]["idlist"]
 
+@tool("Retrieve_details_for_PMIDs_with_ESummary")
 def fetch_pubmed_details(query, retmax=10):
     """
-    Retrieve details for a list of PMIDs using the ESummary endpoint.
+    Description: Retrieve details for a list of PMIDs using the ESummary endpoint.
     """
     pmids = search_pubmed(query, retmax)
     if not pmids:
@@ -56,7 +60,13 @@ def fetch_pubmed_details(query, retmax=10):
 
     return summary_data
 
+@tool("Return_pubmed_identifiers")
 def get_pubmed_identifiers(url):
+    """
+     Description: Returns pubmed identifier
+    - Input: url (str)
+    - Output: Identifiers (list)
+    """
     response = requests.get(url)
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -92,7 +102,11 @@ def get_pubmed_identifiers(url):
             f"Error retrieving the page: HTTP {response.status_code}")
 
 
+@tool("Return_pmc_link")
 def get_pmc_link(url):
+    """
+    Description: Returns the pmc link
+    """
     identifiers = get_pubmed_identifiers(url)
     pmcid = identifiers.get('PMCID')
     if pmcid:
@@ -101,8 +115,11 @@ def get_pmc_link(url):
     else:
         return None
 
-
+@tool("Return_article_text")
 def retrieve_article_text(pmc_url):
+    """
+    Description: retrieves article text
+    """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
     response = requests.get(pmc_url, headers=headers)
@@ -131,32 +148,32 @@ def retrieve_article_text(pmc_url):
             f"Error retrieving the page: HTTP {response.status_code}")
 
 
-url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
-pmc_link = get_pmc_link(url)
-if pmc_link:
-    h2_h3_p_texts = retrieve_article_text(pmc_link)
-    pprint(h2_h3_p_texts)
-else:
-    print("PMCID not found")
+#url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
+# pmc_link = get_pmc_link(url)
+# if pmc_link:
+#     h2_h3_p_texts = retrieve_article_text(pmc_link)
+#     pprint(h2_h3_p_texts)
+# else:
+#     print("PMCID not found")
 
 
-# Example query to search PubMed
-query = "COVID-19"
+# # Example query to search PubMed
+# query = "COVID-19"
 
-# Search PubMed and fetch details
-pubmed_details = fetch_pubmed_details(query, retmax=5)
-pprint(pubmed_details)
+# # Search PubMed and fetch details
+# pubmed_details = fetch_pubmed_details(query)
+# pprint(pubmed_details)
 
-# Example PubMed article URL
-url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
+# # Example PubMed article URL
+# url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
 
-# Get PMC link from PubMed URL
-pmc_link = get_pmc_link(url)
-print(f"PMC Link: {pmc_link}")
+# # Get PMC link from PubMed URL
+# pmc_link = get_pmc_link(url)
+# print(f"PMC Link: {pmc_link}")
 
-# Retrieve article text from PMC link
-if pmc_link:
-    article_text = retrieve_article_text(pmc_link)
-    pprint(article_text)
-else:
-    print("PMCID not found")
+# # Retrieve article text from PMC link
+# if pmc_link:
+#     article_text = retrieve_article_text(pmc_link)
+#     pprint(article_text)
+# else:
+#     print("PMCID not found")
