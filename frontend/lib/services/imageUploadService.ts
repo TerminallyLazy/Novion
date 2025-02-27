@@ -1,4 +1,4 @@
-import { generateSeriesId } from '.././utils/idGenerator';
+import { generateSeriesId } from '../utils/idGenerator';
 import * as cornerstone from 'cornerstone-core';
 import * as dicomParser from 'dicom-parser';
 import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
