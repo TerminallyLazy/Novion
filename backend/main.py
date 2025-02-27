@@ -17,6 +17,8 @@ from IPython.display import display, Image
 
 from dotenv import load_dotenv
 
+import re
+
 load_dotenv(dotenv_path="../.env.local")
 
 members = ["pharmacist", "researcher", "medical_analyst"]
