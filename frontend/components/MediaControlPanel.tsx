@@ -404,7 +404,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
         <div 
           ref={panelRef}
           className={cn(
-            "absolute bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-3",
+            "absolute bg-white dark:bg-[#1b2237] rounded-lg shadow-lg border border-[#e4e7ec] dark:border-[#2D3848] p-3",
             "transition-all duration-300 ease-out will-change-transform",
             isDragging && "cursor-grabbing shadow-2xl scale-[1.02] border-[#4cedff]/50",
             isLogExpanded ? "shadow-lg" : "shadow-md",
@@ -427,8 +427,8 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
               "handle select-none flex items-center justify-between mb-2 px-2 py-1 rounded-md",
               "transition-all duration-150 ease-in-out",
               isDragging 
-                ? "cursor-grabbing bg-[#2D3848]/50 shadow-inner" 
-                : "cursor-grab hover:bg-[#2D3848]/30"
+                ? "cursor-grabbing bg-gray-100 dark:bg-[#2D3848]/50 shadow-inner" 
+                : "cursor-grab hover:bg-gray-50 dark:hover:bg-[#2D3848]/30"
             )}
             style={{
               transform: isDragging ? 'scale(0.98)' : 'scale(1)',
@@ -455,7 +455,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
               <button
                 onClick={onClose}
                 className={cn(
-                  "p-1 rounded hover:bg-[#374357] text-foreground/60",
+                  "p-1 rounded hover:bg-gray-100 dark:hover:bg-[#374357] text-gray-500 dark:text-foreground/60",
                   "transition-colors duration-150 ease-in-out"
                 )}
                 title="Close Panel"
@@ -472,11 +472,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 "p-2 rounded-lg transition-all duration-200",
                 "transform hover:scale-105 active:scale-95",
                 "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                "bg-[#2D3848] hover:bg-[#374357]",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
                 "relative overflow-hidden",
                 (isConnected || activeButton === 'connected') 
                   ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                  : "text-foreground/80"
+                  : "text-gray-500 dark:text-foreground/80"
               )}
               title={isConnected ? "Disconnect from Gemini API" : "Connect to Gemini API"}
             >
@@ -498,11 +498,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 "p-2 rounded-lg transition-all duration-200",
                 "transform hover:scale-105 active:scale-95",
                 "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                "bg-[#2D3848] hover:bg-[#374357]",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
                 "relative overflow-hidden",
                 activeButton === 'microphone' 
                   ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                  : "text-foreground/80"
+                  : "text-gray-500 dark:text-foreground/80"
               )}
               title="Toggle Microphone"
             >
@@ -520,11 +520,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 "p-2 rounded-lg transition-all duration-200",
                 "transform hover:scale-105 active:scale-95",
                 "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                "bg-[#2D3848] hover:bg-[#374357]",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
                 "relative overflow-hidden",
                 activeButton === 'screenshare' 
                   ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                  : "text-foreground/80"
+                  : "text-gray-500 dark:text-foreground/80"
               )}
               title="Share Screen"
             >
@@ -542,11 +542,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 "p-2 rounded-lg transition-all duration-200",
                 "transform hover:scale-105 active:scale-95",
                 "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                "bg-[#2D3848] hover:bg-[#374357]",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
                 "relative overflow-hidden",
                 activeButton === 'webcam' 
                   ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                  : "text-foreground/80"
+                  : "text-gray-500 dark:text-foreground/80"
               )}
               title="Toggle Webcam"
             >
@@ -569,11 +569,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 "flex items-center justify-between",
                 "cursor-pointer rounded-md px-2 py-1",
                 "transition-colors duration-150 ease-in-out",
-                "hover:bg-[#2D3848]"
+                "hover:bg-gray-50 dark:hover:bg-[#2D3848]"
               )}
               onClick={() => setIsLogExpanded(!isLogExpanded)}
             >
-              <span className="text-xs font-medium text-foreground/60">Event Log</span>
+              <span className="text-xs font-medium text-gray-500 dark:text-foreground/60">Event Log</span>
               <div className="flex items-center gap-2">
                 {isLogExpanded && (
                   <>
@@ -585,9 +585,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                       className={cn(
                         "p-1 rounded-md",
                         "transition-all duration-150 ease-in-out",
-                        "hover:bg-[#374357] hover:text-[#4cedff]",
+                        "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
                         "active:scale-95",
-                        "text-foreground/60"
+                        "text-gray-400 dark:text-foreground/60"
                       )}
                       title="Clear logs"
                     >
@@ -601,9 +601,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                       className={cn(
                         "p-1 rounded-md",
                         "transition-all duration-150 ease-in-out",
-                        "hover:bg-[#374357] hover:text-[#4cedff]",
+                        "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
                         "active:scale-95",
-                        "text-foreground/60"
+                        "text-gray-400 dark:text-foreground/60"
                       )}
                       title={isLogMaximized ? "Minimize" : "Maximize"}
                     >
@@ -616,9 +616,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                   isLogExpanded ? "rotate-0" : "-rotate-90"
                 )}>
                   {isLogExpanded ? (
-                    <ChevronUp className="h-3 w-3 text-foreground/60" />
+                    <ChevronUp className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
                   ) : (
-                    <ChevronDown className="h-3 w-3 text-foreground/60" />
+                    <ChevronDown className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
                   )}
                 </div>
               </div>
@@ -626,9 +626,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
             <div 
               ref={logContainerRef}
               className={cn(
-                "bg-[#161d2f] rounded-md p-2 text-xs font-mono",
+                "bg-gray-50 dark:bg-[#161d2f] rounded-md p-2 text-xs font-mono",
                 "transition-all duration-300 ease-in-out",
-                "scrollbar-thin scrollbar-thumb-[#2D3848] scrollbar-track-transparent",
+                "scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#2D3848] scrollbar-track-transparent",
                 isLogExpanded ? "flex-1 opacity-100 mt-1" : "h-0 opacity-0 mt-0"
               )}
             >
@@ -641,7 +641,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                     log.type === 'error' && "text-red-400",
                     log.type === 'api' && "text-blue-400",
                     log.type === 'gemini' && "text-[#4cedff]",
-                    log.type === 'info' && "text-foreground/60"
+                    log.type === 'info' && "text-gray-500 dark:text-foreground/60"
                   )}
                 >
                   <span className="opacity-50">[{log.timestamp.toLocaleTimeString()}]</span>{' '}
@@ -683,8 +683,8 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
         >
           <div 
             className={cn(
-              "bg-[#1b2237] rounded-lg shadow-lg",
-              "border border-[#2D3848] p-4",
+              "bg-white dark:bg-[#1b2237] rounded-lg shadow-lg",
+              "border border-[#e4e7ec] dark:border-[#2D3848] p-4",
               "w-[800px] h-[600px] flex flex-col",
               "animate-in zoom-in-95 duration-200",
               "shadow-[0_0_30px_rgba(0,0,0,0.3)]"
@@ -695,7 +695,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 Event Log
                 <div className={cn(
                   "px-2 py-0.5 rounded-full text-xs",
-                  "bg-[#2D3848] text-foreground/60"
+                  "bg-gray-100 dark:bg-[#2D3848] text-gray-500 dark:text-foreground/60"
                 )}>
                   {logs.length} entries
                 </div>
@@ -706,9 +706,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                   className={cn(
                     "p-1.5 rounded-md",
                     "transition-all duration-150 ease-in-out",
-                    "hover:bg-[#374357] hover:text-[#4cedff]",
+                    "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
                     "active:scale-95",
-                    "text-foreground/60"
+                    "text-gray-500 dark:text-foreground/60"
                   )}
                   title="Clear logs"
                 >
@@ -719,9 +719,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                   className={cn(
                     "p-1.5 rounded-md",
                     "transition-all duration-150 ease-in-out",
-                    "hover:bg-[#374357] hover:text-[#4cedff]",
+                    "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
                     "active:scale-95",
-                    "text-foreground/60"
+                    "text-gray-500 dark:text-foreground/60"
                   )}
                   title="Close"
                 >
@@ -731,9 +731,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
             </div>
             <div 
               className={cn(
-                "flex-1 bg-[#161d2f] rounded-md p-4",
+                "flex-1 bg-gray-50 dark:bg-[#161d2f] rounded-md p-4",
                 "overflow-y-auto text-sm font-mono",
-                "scrollbar-thin scrollbar-thumb-[#2D3848] scrollbar-track-transparent"
+                "scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#2D3848] scrollbar-track-transparent"
               )}
             >
               {logs.map((log, index) => (
@@ -745,7 +745,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                     log.type === 'error' && "text-red-400",
                     log.type === 'api' && "text-blue-400",
                     log.type === 'gemini' && "text-[#4cedff]",
-                    log.type === 'info' && "text-foreground/60"
+                    log.type === 'info' && "text-gray-500 dark:text-foreground/60"
                   )}
                 >
                   <span className="opacity-50 mr-2">[{log.timestamp.toLocaleTimeString()}]</span>
@@ -753,7 +753,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 </div>
               ))}
               {logs.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-foreground/40">
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-foreground/40">
                   <span className="text-lg mb-2">No logs yet</span>
                   <span className="text-sm">Events will appear here</span>
                 </div>

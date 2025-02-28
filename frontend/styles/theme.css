@@ -10,43 +10,43 @@
   }
 
   :root {
-    /* Light mode - medical imaging theme */
-    --background: 220 25% 95%;
-    --foreground: 220 25% 20%;
+    /* Light mode - medical imaging theme - optimized for radiologists in dark rooms */
+    --background: 215 15% 60%; /* Further darkened and desaturated */
+    --foreground: 215 20% 30%;
     
-    --card: 220 25% 97%;
-    --card-foreground: 220 25% 20%;
+    --card: 215 12% 63%; /* Significantly darkened for better dark room viewing */
+    --card-foreground: 215 20% 30%;
  
-    --popover: 220 25% 97%;
-    --popover-foreground: 220 25% 20%;
+    --popover: 215 12% 63%;
+    --popover-foreground: 215 20% 30%;
  
-    --primary: 186 75% 45%;
-    --primary-foreground: 210 20% 98%;
+    --primary: 196 40% 32%; /* More muted primary color to reduce eye strain */
+    --primary-foreground: 215 10% 85%;
  
-    --secondary: 220 25% 92%;
-    --secondary-foreground: 220 25% 20%;
+    --secondary: 215 10% 58%; /* Further darkened */
+    --secondary-foreground: 215 20% 30%;
  
-    --muted: 220 25% 94%;
-    --muted-foreground: 220 25% 40%;
+    --muted: 215 10% 60%;
+    --muted-foreground: 215 15% 40%;
  
-    --accent: 186 75% 45%;
-    --accent-foreground: 210 20% 98%;
+    --accent: 196 40% 32%;
+    --accent-foreground: 215 10% 85%;
  
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 0 50% 45%;
+    --destructive-foreground: 215 10% 85%;
 
-    --border: 220 25% 92%;
-    --input: 220 25% 92%;
-    --ring: 186 75% 45%;
+    --border: 215 10% 55%; /* Darkened more for subtle contrast */
+    --input: 215 10% 55%;
+    --ring: 196 40% 32%;
 
     --radius: 0.75rem;
 
     /* Medical Viewer Specific */
-    
-    --annotation-primary: 186 75% 45%;
-    --annotation-secondary: 280 75% 45%;
-    --measurement-color: 186 75% 45%;
-    --highlight: 186 75% 45%;
+    --viewer-background: 215 10% 50%; /* Darkened significantly for better viewing in dark rooms */
+    --annotation-primary: 196 40% 32%;
+    --annotation-secondary: 280 40% 32%;
+    --measurement-color: 196 40% 32%;
+    --highlight: 196 40% 32%;
   }
 
   

@@ -153,7 +153,7 @@ declare global {
 }
 
 // Viewport types
-type ViewportLayout = "1x1" | "2x2" | "3x3";
+type setViewportState = "1x1" | "2x2" | "3x3";
 type ViewportType = "AXIAL" | "SAGITTAL" | "CORONAL";
 
 // Tool types
@@ -598,7 +598,7 @@ function ViewportGrid({
         )}
       </div>
       {expandedViewport && (
-        <div className="absolute inset-4">
+        <div className="absolute inset-0 p-1">
           <ViewportPanel
             type={expandedViewport}
             isActive={true}
@@ -638,18 +638,32 @@ function ViewportPanel({
     }
   }, []);
 
+  const handleViewportClick = useCallback(() => {
+    // Only set this viewport as active when clicked
+    onActivate();
+  }, [onActivate]);
+
   return (
     <div 
       className={cn(
         "relative w-full h-full min-h-0 rounded-lg overflow-hidden",
         "border transition-all duration-200",
-        "bg-[#0a0d13]",
-        "border-[#1b2538]",
-        "shadow-[inset_0_0_10px_rgba(0,0,0,0.3)]",
-        isActive && "border-[#4cedff] ring-1 ring-[#4cedff] shadow-[0_0_30px_rgba(76,237,255,0.2)]",
-        isExpanded && "absolute inset-4 m-0 z-30 shadow-[0_0_40px_rgba(76,237,255,0.25)]"
+        "bg-white dark:bg-[#0a0d13]",
+        "border-[#e4e7ec] dark:border-[#1b2538]",
+        "shadow-sm dark:shadow-[inset_0_0_10px_rgba(0,0,0,0.3)]",
+        isActive && "border-[#4cedff] ring-1 ring-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.15)] dark:shadow-[0_0_30px_rgba(76,237,255,0.2)]",
+        isExpanded && "m-0 z-30 shadow-[0_0_20px_rgba(76,237,255,0.15)] dark:shadow-[0_0_40px_rgba(76,237,255,0.25)]"
       )}
-      onClick={onActivate}
+      onClick={handleViewportClick}
+      tabIndex={0}
+      role="region"
+      aria-label={`${type} viewport${isActive ? ', active' : ''}${isExpanded ? ', expanded' : ''}`}
+      onKeyDown={(e) => {
+        // Make the viewport panel keyboard accessible
+        if (e.key === 'Enter' || e.key === ' ') {
+          handleViewportClick();
+        }
+      }}
     >
       <DicomViewer
         imageId={currentImageId}
@@ -660,20 +674,27 @@ function ViewportPanel({
         onToggleExpand={onToggleExpand}
         onImageLoaded={handleImageLoaded}
       />
-      <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded bg-[#161d2f]/80 text-foreground/80 backdrop-blur-sm">
+      <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded 
+        bg-[#f0f2f5] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0] 
+        backdrop-blur-sm border border-[#e4e7ec] dark:border-[#4a5583] shadow-sm">
         {type}
       </div>
       {loadError && (
-        <div className="absolute bottom-2 left-2 px-2 py-1 text-xs font-medium rounded bg-red-500/80 text-white backdrop-blur-sm">
+        <div className="absolute bottom-2 left-2 px-2 py-1 text-xs font-medium rounded bg-red-500/90 text-white backdrop-blur-sm shadow-sm">
           {loadError}
         </div>
       )}
       <button
-        className="absolute top-2 right-2 p-1.5 rounded-md bg-[#161d2f]/80 hover:bg-[#1f2642] text-foreground/80 hover:text-[#4cedff] transition-colors shadow-md backdrop-blur-sm"
+        className="absolute top-2 right-2 p-1.5 rounded-md 
+        bg-[#f0f2f5] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0]
+        hover:bg-[#dce3f1] dark:hover:bg-[#3a4563] hover:text-[#166f85] dark:hover:text-[#4cedff] 
+        transition-colors shadow-md backdrop-blur-sm border border-[#e4e7ec] dark:border-[#4a5583]"
         onClick={(e) => {
           e.stopPropagation();
           onToggleExpand();
         }}
+        aria-label={isExpanded ? `Collapse ${type} viewport` : `Expand ${type} viewport`}
+        tabIndex={0}
       >
         <Maximize2 className="h-4 w-4" />
       </button>
@@ -770,22 +791,6 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
     }
   }, [currentSeries, showToast, viewportState.loadedImages]);
 
-  // Add cleanup effect
-  useEffect(() => {
-    return () => {
-      // Clean up blob URLs when component unmounts
-      if (viewportState.loadedImages) {
-        viewportState.loadedImages.forEach(image => {
-          if (image.imageId.startsWith('blob:')) {
-            URL.revokeObjectURL(image.imageId);
-          } else if (image.imageId.startsWith('dicomfile://blob:')) {
-            URL.revokeObjectURL(image.imageId.replace('dicomfile://', ''));
-          }
-        });
-      }
-    };
-  }, []);
-
   const handleSendMessage = useCallback(async (command: any) => {
     if (!message.trim()) return;
     
@@ -856,10 +861,10 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
 
   return (
     <>
-      <div className="h-full flex flex-col text-center bg-[#141a29]">
-        <div className="flex items-center h-12 px-4 border-b border-[#2D3848]">
+      <div className="h-full flex flex-col text-center bg-white dark:bg-[#141a29]">
+        <div className="flex items-center h-12 px-4 border-b border-[#e4e7ec] dark:border-[#2D3848]">
           <button
-            className="p-2 hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
+            className="p-2 hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] rounded-md text-foreground/80 hover:text-[#4cedff]"
             onClick={() => onExpandedChange(!isExpanded)}
           >
             {isExpanded ? (
@@ -872,15 +877,15 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
             Analysis
           </span>
         </div>
-        <div className="px-4 py-2 border-b border-[#2D3848]">
+        <div className="px-4 py-2 border-b border-[#e4e7ec] dark:border-[#2D3848]">
           {currentSeries && (
             <button
               onClick={handleLoadSeries}
               type="button"
               className={cn(
                 "w-full px-4 py-2 rounded-md transition-colors duration-200",
-                "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2538]",
-                "bg-[#2D3848] text-[#4cedff] hover:bg-[#374357]",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#f8fafc] dark:focus:ring-offset-[#1b2538]",
+                "bg-[#f0f2f5] dark:bg-[#2D3848] text-[#4cedff] hover:bg-[#e4e7ec] dark:hover:bg-[#374357]",
                 "flex items-center justify-center gap-2"
               )}
             >
@@ -904,12 +909,12 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
               <TabsContent value="analysis" className="mt-4">
                 <div className="space-y-4">
                   <ImageSeriesUpload onUploadComplete={handleUploadComplete} />
-                  <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                    <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                  <div className="flex flex-col h-[300px] bg-[#f8fafc] dark:bg-[#1b2237] rounded-md">
+                    <div className="flex items-center justify-between p-2 border-b border-[#e4e7ec] dark:border-[#2D3848]">
                       <span className="text-sm font-medium">Chat</span>
                       <button
                         onClick={() => setIsChatExpanded(!isChatExpanded)}
-                        className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                        className="p-1.5 rounded-md hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
                         title={isChatExpanded ? "Minimize chat" : "Expand chat"}
                       >
                         <Maximize2 className="h-4 w-4" />
@@ -923,7 +928,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                             "p-2 rounded-lg max-w-[80%] mb-2",
                             msg.role === 'user' 
                               ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-                              : "bg-[#2D3848] text-foreground/80"
+                              : "bg-[#f0f2f5] dark:bg-[#2D3848] text-foreground/80"
                           )}
                         >
                           {msg.content}
@@ -931,7 +936,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                       ))}
                       <div ref={chatEndRef} />
                     </div>
-                    <div className="flex gap-2 p-2 border-t border-[#2D3848]">
+                    <div className="flex gap-2 p-2 border-t border-[#e4e7ec] dark:border-[#2D3848]">
                       <input
                         ref={inputRef}
                         type="text"
@@ -939,7 +944,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a message..."
-                        className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                        className="min-w-0 flex-1 px-3 py-2 bg-[#f8fafc] dark:bg-[#2D3848] border border-[#e4e7ec] dark:border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
                         autoComplete="off"
                       />
                       <button
@@ -948,10 +953,10 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                         disabled={!message.trim()}
                         className={cn(
                           "shrink-0 px-4 py-2 rounded-md transition-colors duration-200",
-                          "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]",
+                          "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#f8fafc] dark:focus:ring-offset-[#1b2237]",
                           message.trim() 
                             ? "bg-[#4cedff] text-[#1b2237] hover:bg-[#4cedff]/90" 
-                            : "bg-[#2D3848] text-foreground/50 cursor-not-allowed"
+                            : "bg-[#f0f2f5] dark:bg-[#2D3848] text-foreground/50 cursor-not-allowed"
                         )}
                       >
                         Send
@@ -966,12 +971,12 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
               </TabsContent>
 
               <TabsContent value="events" className="mt-4">
-                <div className="flex flex-col h-[300px] bg-[#1b2237] rounded-md">
-                  <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+                <div className="flex flex-col h-[300px] bg-[#f8fafc] dark:bg-[#1b2237] rounded-md">
+                  <div className="flex items-center justify-between p-2 border-b border-[#e4e7ec] dark:border-[#2D3848]">
                     <span className="text-sm font-medium">Event Log</span>
                     <button
                       onClick={() => setIsEventLogDetached(!isEventLogDetached)}
-                      className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                      className="p-1.5 rounded-md hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
                     >
                       {isEventLogDetached ? "Attach" : "Detach"}
                     </button>
@@ -989,18 +994,18 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
       {/* Expanded Chat Modal */}
       {isChatExpanded && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-          <div className="bg-[#1b2237] rounded-lg shadow-lg border border-[#2D3848] p-4 w-[800px] h-[600px] flex flex-col">
+          <div className="bg-white dark:bg-[#1b2237] rounded-lg shadow-lg border border-[#e4e7ec] dark:border-[#2D3848] p-4 w-[800px] h-[600px] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <span className="text-sm font-medium">AI Chat</span>
               <button
                 onClick={() => setIsChatExpanded(false)}
-                className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+                className="p-1.5 rounded-md hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
                 title="Close expanded chat"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 bg-[#161d2f] rounded-md p-4 overflow-y-auto">
+            <div className="flex-1 bg-[#f8fafc] dark:bg-[#161d2f] rounded-md p-4 overflow-y-auto">
               {messages.map((msg, i) => (
                 <div
                   key={i}
@@ -1008,7 +1013,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                     "p-3 rounded-lg max-w-[80%] mb-3",
                     msg.role === 'user' 
                       ? "bg-[#4cedff] text-[#1b2237] ml-auto" 
-                      : "bg-[#2D3848] text-foreground/80"
+                      : "bg-[#f0f2f5] dark:bg-[#2D3848] text-foreground/80"
                   )}
                 >
                   {msg.content}
@@ -1017,7 +1022,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
               <div ref={chatEndRef} />
             </div>
             <div className="mt-4">
-              <div className="flex gap-2 p-2 border-t border-[#2D3848]">
+              <div className="flex gap-2 p-2 border-t border-[#e4e7ec] dark:border-[#2D3848]">
                 <input
                   ref={inputRef}
                   type="text"
@@ -1025,7 +1030,7 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
                   placeholder="Type a message..."
-                  className="min-w-0 flex-1 px-3 py-2 bg-[#2D3848] border border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
+                  className="min-w-0 flex-1 px-3 py-2 bg-[#f8fafc] dark:bg-[#2D3848] border border-[#e4e7ec] dark:border-[#4D5867] rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:border-transparent"
                   autoComplete="off"
                 />
                 <button
@@ -1034,10 +1039,10 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
                   disabled={!message.trim()}
                   className={cn(
                     "shrink-0 px-4 py-2 rounded-md transition-colors duration-200",
-                    "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#1b2237]",
+                    "focus:outline-none focus:ring-2 focus:ring-[#4cedff] focus:ring-offset-2 focus:ring-offset-[#f8fafc] dark:focus:ring-offset-[#1b2237]",
                     message.trim() 
                       ? "bg-[#4cedff] text-[#1b2237] hover:bg-[#4cedff]/90" 
-                      : "bg-[#2D3848] text-foreground/50 cursor-not-allowed"
+                      : "bg-[#f0f2f5] dark:bg-[#2D3848] text-foreground/50 cursor-not-allowed"
                   )}
                 >
                   Send
@@ -1053,12 +1058,12 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
 
 function DetachedEventLog({ onAttach }: { onAttach: () => void }) {
   return (
-    <div className="fixed bottom-32 right-8 w-80 z-50 bg-[#1b2237] rounded-md shadow-lg border border-[#2D3848]">
-      <div className="flex items-center justify-between p-2 border-b border-[#2D3848]">
+    <div className="fixed bottom-32 right-8 w-80 z-50 bg-white dark:bg-[#1b2237] rounded-md shadow-lg border border-[#e4e7ec] dark:border-[#2D3848]">
+      <div className="flex items-center justify-between p-2 border-b border-[#e4e7ec] dark:border-[#2D3848]">
         <span className="text-sm font-medium">Event Log</span>
         <button
           onClick={onAttach}
-          className="p-1.5 rounded-md hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
+          className="p-1.5 rounded-md hover:bg-[#f4f6f8] dark:hover:bg-[#2D3848] text-foreground/80 hover:text-[#4cedff]"
         >
           Attach
         </button>
@@ -1079,12 +1084,13 @@ function App() {
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [theme, setTheme] = useState('dark');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [loadedImages, setLoadedImages] = useState([]);
+  const [loadedImages, setLoadedImages] = useState<LoadedImage[]>([]);
+  const [expandedViewport, setExpandedViewport] = useState<ViewportType | null>(null);
 
   const DEFAULT_PANEL_WIDTH = 320;
   const COLLAPSED_PANEL_WIDTH = 48;
 
-  const panelWidth = (collapsed) => collapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH;
+  const panelWidth = (collapsed: boolean) => collapsed ? COLLAPSED_PANEL_WIDTH : DEFAULT_PANEL_WIDTH;
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -1102,11 +1108,11 @@ function App() {
     }
   }, []);
 
-  const handleThemeChange = (newTheme) => setTheme(newTheme);
+  const handleThemeChange = (newTheme: React.SetStateAction<string>) => setTheme(newTheme);
 
-  const handleLayoutChange = (newLayout) => {
+  const handleLayoutChange = (newLayout: React.SetStateAction<string>) => {
     setLayout(newLayout);
-    setActiveViewport(null);
+    setActiveViewport(null as unknown as string);
   };
 
   const handleFullscreenToggle = () => {
@@ -1117,19 +1123,25 @@ function App() {
     }
   };
 
-  const handleViewportExpand = (viewport) => {
-    setActiveViewport((prev) => (prev === viewport ? null : viewport));
+  const handleViewportExpand = (viewport: string) => {
+    setExpandedViewport((prev) => 
+      prev === viewport ? null : viewport as ViewportType
+    );
   };
 
+  // Calculate panel positions
+  const leftWidth = panelWidth(leftPanelCollapsed);
+  const rightWidth = panelWidth(rightPanelCollapsed);
+
   return (
-    <div className="medical-viewer w-screen h-screen overflow-hidden">
+    <div className="medical-viewer w-screen h-screen overflow-hidden relative">
       <MediaControlPanel />
       {isEventLogDetached && (
         <DetachedEventLog onAttach={() => setIsEventLogDetached(false)} />
       )}
       <Panel
-        className="fixed top-0 bottom-0 left-0 bg-card border-r border-border z-40"
-        width={panelWidth(leftPanelCollapsed)}
+        className="fixed top-0 bottom-0 left-0 bg-white dark:bg-card border-r border-[#e4e7ec] dark:border-border z-10"
+        width={leftWidth}
       >
         <LeftToolbar
           isExpanded={!leftPanelCollapsed}
@@ -1138,24 +1150,25 @@ function App() {
       </Panel>
 
       <div
-        className="fixed top-0 bottom-0 transition-all duration-200"
+        className="fixed top-0 bottom-0 transition-all duration-200 overflow-hidden"
         style={{
-          left: `${panelWidth(leftPanelCollapsed)}px`,
-          right: `${panelWidth(rightPanelCollapsed)}px`,
+          left: `${leftWidth}px`,
+          right: `${rightWidth}px`,
+          width: `calc(100% - ${leftWidth}px - ${rightWidth}px)`
         }}
       >
         <TopToolbar 
-          theme={theme}
+          theme={theme as 'dark' | 'light'}
           onThemeChange={handleThemeChange}
-          layout={layout}
+          layout={layout as ViewportLayout}
           onLayoutChange={handleLayoutChange}
           onToggleFullscreen={handleFullscreenToggle}
         />
         <div className="h-[calc(100vh-3rem)] w-full">
           <ViewportGrid 
-            layout={layout}
-            activeViewport={activeViewport}
-            expandedViewport={activeViewport}
+            layout={layout as ViewportLayout}
+            activeViewport={activeViewport as ViewportType}
+            expandedViewport={expandedViewport as ViewportType | null}
             onViewportChange={setActiveViewport}
             onViewportExpand={handleViewportExpand}
             loadedImages={loadedImages}
@@ -1165,29 +1178,53 @@ function App() {
       </div>
 
       <Panel
-        className="fixed top-0 bottom-0 right-0 z-40 bg-[#141a29] border-l border-[#1b2538] shadow-lg"
-        width={panelWidth(rightPanelCollapsed)}
+        className="fixed top-0 bottom-0 right-0 z-10 bg-white dark:bg-[#141a29] border-l border-[#e4e7ec] dark:border-[#1b2538] shadow-lg"
+        width={rightWidth}
       >
         <RightPanel
           isExpanded={!rightPanelCollapsed}
           onExpandedChange={(expanded) => setRightPanelCollapsed(!expanded)}
           viewportState={{
-            activeViewport,
-            layout,
+            activeViewport: activeViewport as ViewportType,
+            layout: layout as ViewportLayout,
             leftPanelCollapsed,
             rightPanelCollapsed,
-            theme,
+            theme: theme as 'dark' | 'light',
             currentImageIndex,
             loadedImages,
+            expandedViewport: expandedViewport as ViewportType | null,
           }}
-          setViewportState={(newState) => {
-            setActiveViewport(newState.activeViewport ?? activeViewport);
-            setLayout(newState.layout ?? layout);
-            setLeftPanelCollapsed(newState.leftPanelCollapsed ?? leftPanelCollapsed);
-            setRightPanelCollapsed(newState.rightPanelCollapsed ?? rightPanelCollapsed);
-            setTheme(newState.theme ?? theme);
-            setCurrentImageIndex(newState.currentImageIndex ?? currentImageIndex);
-            setLoadedImages(newState.loadedImages ?? loadedImages);
+          setViewportState={(newState: ViewportState | ((prevState: ViewportState) => ViewportState)) => {
+            if (typeof newState === 'function') {
+              const updatedState = (newState as (prevState: ViewportState) => ViewportState)({
+                activeViewport: activeViewport as ViewportType,
+                layout: layout as ViewportLayout,
+                leftPanelCollapsed,
+                rightPanelCollapsed,
+                theme: theme as 'dark' | 'light',
+                currentImageIndex,
+                loadedImages,
+                expandedViewport: expandedViewport as ViewportType | null,
+              });
+              setActiveViewport(updatedState.activeViewport);
+              setLayout(updatedState.layout);
+              setLeftPanelCollapsed(updatedState.leftPanelCollapsed);
+              setRightPanelCollapsed(updatedState.rightPanelCollapsed);
+              setTheme(updatedState.theme);
+            } else {
+              setActiveViewport(newState.activeViewport ?? activeViewport);
+              setLayout(newState.layout ?? layout);
+              setLeftPanelCollapsed(newState.leftPanelCollapsed ?? leftPanelCollapsed);
+              setRightPanelCollapsed(newState.rightPanelCollapsed ?? rightPanelCollapsed);
+              setTheme(newState.theme ?? theme);
+            }
+            // Only set these if they exist in newState to avoid type errors
+            if ('currentImageIndex' in newState) {
+              setCurrentImageIndex(newState.currentImageIndex);
+            }
+            if ('loadedImages' in newState) {
+              setLoadedImages(newState.loadedImages as LoadedImage[]);
+            }
           }}
         />
       </Panel>

@@ -51,7 +51,7 @@
 
   .panel-toggle button {
     @apply flex items-center justify-center w-full h-full;
-    @apply hover:text-[#4cedff] text-foreground/80 transition-colors;
+    @apply hover:text-[#4ba7c4] text-foreground/80 transition-colors;
   }
 
   .medical-viewer {
@@ -67,8 +67,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: hsl(224 30% 8%);
-    border-color: hsl(224 35% 14%);
+    background-color: hsl(215 12% 65%); /* Darkened header for light mode */
+    border-color: hsl(215 12% 60%);
   }
 
   .top-header-section {
@@ -76,8 +76,12 @@
   }
 
   .viewer-select {
+    background-color: hsl(215 12% 70%);
+    @apply text-[#2d3a4f] dark:text-foreground border-0 rounded-md px-3 py-1.5;
+  }
+
+  .dark .viewer-select {
     background-color: hsl(224 35% 12%);
-    @apply text-foreground border-0 rounded-md px-3 py-1.5;
   }
 
   .dicom-viewport {
@@ -89,6 +93,15 @@
   .viewport-gradient {
     @apply absolute inset-0 pointer-events-none z-10;
     background: linear-gradient(180deg, 
+      rgba(180, 190, 205, 0) 0%,
+      rgba(180, 190, 205, 0.2) 15%,
+      rgba(180, 190, 205, 0.2) 85%,
+      rgba(180, 190, 205, 0.6) 100%
+    );
+  }
+
+  .dark .viewport-gradient {
+    background: linear-gradient(180deg, 
       rgba(15, 19, 28, 0) 0%,
       rgba(15, 19, 28, 0.3) 15%,
       rgba(15, 19, 28, 0.3) 85%,
@@ -98,8 +111,9 @@
 
   .viewport-expand-button {
     @apply absolute top-2 right-2 p-1.5 rounded-md;
-    @apply bg-[#161d2f] hover:bg-[#1f2642] text-foreground/90 hover:text-[#4cedff];
-    @apply transition-colors shadow-md;
+    @apply bg-[#c8d0df] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0];
+    @apply hover:bg-[#b5c0d2] dark:hover:bg-[#3a4563] hover:text-[#156274] dark:hover:text-[#4cedff];
+    @apply transition-colors shadow-md backdrop-blur-sm border border-[#bbc4d2] dark:border-[#4a5583];
   }
 
   .dicom-viewport canvas {
@@ -108,11 +122,17 @@
 
   .viewport-panel {
     @apply relative rounded-lg overflow-hidden;
+    background-color: hsl(215 12% 76%);
+    border: 1px solid #bbc4d2;
+    @apply shadow-sm;
+    height: 100%;
+    min-height: 400px;
+  }
+
+  .dark .viewport-panel {
     background-color: hsl(224 30% 6%);
     border-color: hsl(224 35% 14%);
     @apply shadow-[inset_0_0_10px_rgba(0,0,0,0.3)];
-    height: 100%;
-    min-height: 400px;
   }
 
   .viewport-panel.active {
@@ -122,16 +142,21 @@
 
   .viewport-label {
     @apply absolute top-2 left-2 px-2 py-1 text-xs font-medium;
-    @apply bg-[#161d2f] rounded text-foreground/40;
+    @apply bg-[#c8d0df] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0];
+    @apply rounded shadow-sm backdrop-blur-sm border border-[#bbc4d2] dark:border-[#4a5583];
   }
 
   .tool-section {
     @apply space-y-2 p-3;
+    border-bottom: 1px solid #c8d0df;
+  }
+
+  .dark .tool-section {
     border-bottom: 1px solid #1b2538;
   }
 
   .tool-section-title {
-    @apply text-xs font-medium text-foreground/60 text-center border-b border-foreground/10 uppercase tracking-wider mb-2;
+    @apply text-xs font-medium text-[#394859] dark:text-foreground/60 text-center border-b border-[#c8d0df] dark:border-foreground/10 uppercase tracking-wider mb-2;
   }
 
   .tool-grid {
@@ -142,22 +167,50 @@
     @apply relative aspect-square rounded-md transition-all duration-200 ease-in-out;
     @apply flex items-center justify-center;
     @apply w-full max-w-[4.5rem];
+    background-color: hsl(215 12% 75%);
+    border: 1px solid #c0c9d8;
+    color: #394859;
+    height: 4.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .tool-button {
     background-color: hsl(224 30% 10%);
     border: 1px solid #1b2538;
-    height: 4.5rem;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    color: inherit;
   }
 
   .tool-button:hover {
-    border-color: #4cedff;
-    color: #4cedff;
+    border-color: #4192ab;
+    color: #4192ab;
     transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .tool-button:hover {
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
   }
 
   .tool-button.active {
-    background-color: #4cedff;
-    border-color: #4cedff;
+    background-color: #4192ab;
+    border-color: #4192ab;
+    color: #e6f0f3;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .tool-button.active {
+    color: hsl(224 30% 6%);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+  }
+
+  .tool-button-active {
+    background-color: #4192ab;
+    border-color: #4192ab;
+    color: #e6f0f3;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .tool-button-active {
     color: hsl(224 30% 6%);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
   }
@@ -168,6 +221,11 @@
 
   .right-sidebar {
     @apply h-full flex flex-col overflow-hidden relative;
+    background-color: hsl(215 12% 75%);
+    border-left: 1px solid #c0c9d8;
+  }
+
+  .dark .right-sidebar {
     background-color: hsl(224 30% 8%);
     border-left: 1px solid #1b2538;
   }
@@ -178,11 +236,19 @@
 
   .right-sidebar-header {
     @apply flex items-center justify-between p-4;
+    border-bottom: 1px solid #c0c9d8;
+  }
+
+  .dark .right-sidebar-header {
     border-bottom: 1px solid #1b2538;
   }
 
   .right-sidebar-section {
     @apply p-4;
+    border-bottom: 1px solid #c0c9d8;
+  }
+
+  .dark .right-sidebar-section {
     border-bottom: 1px solid #1b2538;
   }
 
@@ -270,7 +336,7 @@
     background-color: hsl(var(--card) / 0.97);
     backdrop-filter: blur(16px);
     border-left: 1px solid hsl(var(--border));
-    box-shadow: -8px 0 24px -6px rgba(0, 0, 0, 0.12);
+    box-shadow: -8px 0 24px -6px rgba(0, 0, 0, 0.15);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
   }
@@ -278,7 +344,7 @@
   .panel-container.left {
     @apply left-0;
     border-right: 1px solid hsl(var(--border));
-    box-shadow: 4px 0 16px -4px rgba(0, 0, 0, 0.1);
+    box-shadow: 4px 0 16px -4px rgba(0, 0, 0, 0.12);
   }
 
   .panel-container.right {
@@ -385,5 +451,10 @@
 
   .processing {
     animation: pulse 2s infinite;
+  }
+
+  .dark .top-header {
+    background-color: hsl(224 30% 8%);
+    border-color: hsl(224 35% 14%);
   }
 }
