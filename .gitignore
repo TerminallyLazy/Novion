@@ -2,4 +2,11 @@
 *.pyc
 *.png
 
+*.dcm
+
+tmp/*
+
+tmp/
+
+
 __pycache__/

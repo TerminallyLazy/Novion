@@ -58,6 +58,8 @@ import {
   initializeCornerstone, 
   loadAndCacheImage
 } from '@/lib/utils/cornerstoneInit';
+import { ViewportManager } from '@/components/ViewportManager';
+import { LoadedImage } from '@/lib/types';
 
 // Add type declarations for the Web Speech API
 
@@ -198,23 +200,6 @@ interface ImageAnalysis {
   abnormalities?: string[];
 }
 
-interface LoadedImage {
-  localUrl: string;
-  analysis: ImageAnalysis | null | undefined;
-  metadata?: {
-    modality?: string;
-    studyDate?: string;
-    seriesNumber?: string;
-    instanceNumber?: string;
-    dimensions?: {
-      width: number;
-      height: number;
-    };
-  };
-  imageId: string;
-  file?: File;
-}
-
 interface ViewportState {
   activeViewport: ViewportType;
   layout: ViewportLayout;
@@ -234,6 +219,7 @@ interface ViewportGridProps {
   onViewportExpand: (viewport: ViewportType) => void;
   loadedImages?: LoadedImage[];
   currentImageIndex: number;
+  activeTool: Tool;
 }
 
 interface ViewportPanelProps {
@@ -249,23 +235,55 @@ interface ViewportPanelProps {
 interface ToolbarProps {
   isExpanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  activeTool?: Tool;
+  setActiveTool?: React.Dispatch<React.SetStateAction<Tool>>;
 }
 
-function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
-  const [activeTool, setActiveTool] = useState<Tool>(null);
+function LeftToolbar({ isExpanded, onExpandedChange, activeTool, setActiveTool, theme, onThemeChange, layout, onLayoutChange, onToggleFullscreen }: ToolbarProps & {
+  theme: 'light' | 'dark';
+  onThemeChange: (theme: 'light' | 'dark') => void;
+  layout: ViewportLayout;
+  onLayoutChange: (layout: ViewportLayout) => void;
+  onToggleFullscreen: () => void;
+}) {
   const [toolHistory, setToolHistory] = useState<Tool[]>([]);
   const [window, setWindow] = useState(2000);
   const [level, setLevel] = useState(-498);
   const { toast } = useToast();
 
   const handleToolClick = (tool: Tool) => {
+    console.log(`handleToolClick called with tool: ${tool}, current activeTool: ${activeTool}`);
+    
     if (activeTool === tool && tool) {
-      setActiveTool(null);
+      console.log(`Deactivating current tool: ${tool}`);
+      if (setActiveTool) {
+        setActiveTool(null);
+      }
       setToolHistory((prev) => [...prev.filter(t => t !== tool)]);
     } else if (tool) {
       const prevTool = activeTool;
-      setActiveTool(tool);
+      console.log(`Activating new tool: ${tool}, previous tool: ${prevTool}`);
+      if (setActiveTool) {
+        setActiveTool(tool);
+        console.log(`setActiveTool called with: ${tool}`);
+      } else {
+        console.warn(`setActiveTool function is not available`);
+      }
       setToolHistory((prev) => [...prev.filter(t => t !== tool), tool]);
+    }
+  };
+
+  const cycleLayout = () => {
+    switch (layout) {
+      case "1x1":
+        onLayoutChange("2x2");
+        break;
+      case "2x2":
+        onLayoutChange("3x3");
+        break;
+      case "3x3":
+        onLayoutChange("1x1");
+        break;
     }
   };
 
@@ -398,6 +416,41 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
         </div>
 
         <div className="tool-section">
+          <h3 className="tool-section-title">Workspace</h3>
+          <div className="tool-grid">
+            <CustomToolButton
+              icon={Layout}
+              label="Layout"
+              onClick={cycleLayout}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={theme === 'dark' ? Sun : Moon}
+              label={theme === 'dark' ? "Light Mode" : "Dark Mode"}
+              onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={Maximize2}
+              label="Fullscreen"
+              onClick={onToggleFullscreen}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={RotateCcw}
+              label="Reset"
+              onClick={() => {
+                toast({
+                  title: "Reset View",
+                  description: "Resetting to default view...",
+                });
+              }}
+              className="flex justify-center items-center"
+            />
+          </div>
+        </div>
+
+        <div className="tool-section">
           <h3 className="tool-section-title">Tools</h3>
           <div className="tool-grid">
             <CustomToolButton
@@ -442,7 +495,7 @@ function LeftToolbar({ isExpanded, onExpandedChange }: ToolbarProps) {
                   description: "Opening settings...",
                 });
               }}
-              className="flex justify-center w-fullitems-center"
+              className="flex justify-center items-center"
             />
           </div>
         </div>
@@ -551,7 +604,8 @@ function ViewportGrid({
   onViewportChange,
   onViewportExpand,
   loadedImages,
-  currentImageIndex
+  currentImageIndex,
+  activeTool
 }: ViewportGridProps) {
   const gridConfig = {
     "1x1": "grid-cols-1",
@@ -560,7 +614,7 @@ function ViewportGrid({
   };
 
   return (
-    <div className="p-4 h-full relative bg-[#f8fafc] dark:bg-[#0f131c]">
+    <div className="p-4 h-full relative bg-white dark:bg-[#0f131c]">
       <div className={cn(
         "grid gap-4 h-full",
         expandedViewport ? "invisible" : gridConfig[layout]
@@ -573,6 +627,7 @@ function ViewportGrid({
           onToggleExpand={() => onViewportExpand("AXIAL")}
           loadedImages={loadedImages}
           currentImageIndex={currentImageIndex}
+          activeTool={activeTool}
         />
         {(layout === "2x2" || layout === "3x3") && (
           <>
@@ -584,6 +639,7 @@ function ViewportGrid({
               onToggleExpand={() => onViewportExpand("SAGITTAL")}
               loadedImages={loadedImages}
               currentImageIndex={currentImageIndex}
+              activeTool={activeTool}
             />
             <ViewportPanel
               type="CORONAL"
@@ -593,6 +649,7 @@ function ViewportGrid({
               onToggleExpand={() => onViewportExpand("CORONAL")}
               loadedImages={loadedImages}
               currentImageIndex={currentImageIndex}
+              activeTool={activeTool}
             />
           </>
         )}
@@ -607,6 +664,7 @@ function ViewportGrid({
             onToggleExpand={() => onViewportExpand(expandedViewport)}
             loadedImages={loadedImages}
             currentImageIndex={currentImageIndex}
+            activeTool={activeTool}
           />
         </div>
       )}
@@ -621,22 +679,28 @@ function ViewportPanel({
   onActivate, 
   onToggleExpand,
   loadedImages,
-  currentImageIndex
-}: ViewportPanelProps) {
-  const [loadError, setLoadError] = useState<string>();
+  currentImageIndex,
+  activeTool
+}: ViewportPanelProps & { activeTool: Tool }) {
+  // Add debug logging effect
+  useEffect(() => {
+    console.log('ViewportPanel debug:', {
+      type,
+      isActive,
+      loadedImagesLength: loadedImages?.length,
+      currentImageIndex,
+      imageAtIndex: loadedImages?.[currentImageIndex]
+    });
 
-  const currentImageId = useMemo(() => {
-    if (!loadedImages || loadedImages.length === 0) return undefined;
-    return loadedImages[currentImageIndex]?.imageId;
-  }, [loadedImages, currentImageIndex]);
-
-  const handleImageLoaded = useCallback((success: boolean) => {
-    if (!success) {
-      setLoadError('Failed to load image');
-    } else {
-      setLoadError(undefined);
+    // Verify currentImageIndex is valid for the current loadedImages array
+    if (loadedImages && loadedImages.length > 0) {
+      if (currentImageIndex >= loadedImages.length) {
+        console.warn(`ViewportPanel: currentImageIndex (${currentImageIndex}) is out of bounds for loadedImages array (length: ${loadedImages.length}). This could cause display issues.`);
+      } else if (!loadedImages[currentImageIndex]?.imageId) {
+        console.warn(`ViewportPanel: Image at currentImageIndex ${currentImageIndex} doesn't have a valid imageId.`);
+      }
     }
-  }, []);
+  }, [loadedImages, currentImageIndex, type, isActive]);
 
   const handleViewportClick = useCallback(() => {
     // Only set this viewport as active when clicked
@@ -665,25 +729,21 @@ function ViewportPanel({
         }
       }}
     >
-      <DicomViewer
-        imageId={currentImageId}
+      <ViewportManager
         viewportType={type}
         isActive={isActive}
         isExpanded={isExpanded}
         onActivate={onActivate}
         onToggleExpand={onToggleExpand}
-        onImageLoaded={handleImageLoaded}
+        loadedImages={loadedImages}
+        currentImageIndex={currentImageIndex}
+        activeTool={activeTool}
       />
       <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded 
         bg-[#f0f2f5] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0] 
         backdrop-blur-sm border border-[#e4e7ec] dark:border-[#4a5583] shadow-sm">
         {type}
       </div>
-      {loadError && (
-        <div className="absolute bottom-2 left-2 px-2 py-1 text-xs font-medium rounded bg-red-500/90 text-white backdrop-blur-sm shadow-sm">
-          {loadError}
-        </div>
-      )}
       <button
         className="absolute top-2 right-2 p-1.5 rounded-md 
         bg-[#f0f2f5] dark:bg-[#2a3349] text-[#334155] dark:text-[#e2e8f0]
@@ -724,10 +784,20 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
     };
   }, [currentSeries]);
 
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
   const showToast = useCallback(({ title, description, variant = 'default' }: Omit<ToastProps, 'id' | 'onDismiss'>) => {
     const id = `toast-${Date.now()}`;
-    setToasts(prev => [...prev, { id, title, description, variant }]);
-  }, []);
+    setToasts(prev => [...prev, { 
+      id, 
+      title, 
+      description, 
+      variant,
+      onDismiss: () => dismissToast(id)
+    }]);
+  }, [dismissToast]);
 
   const handleLoadSeries = useCallback(async () => {
     if (!currentSeries) return;
@@ -736,60 +806,93 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
       // Clean up any existing blob URLs
       if (viewportState.loadedImages) {
         viewportState.loadedImages.forEach(image => {
-          if (image.imageId.startsWith('blob:')) {
-            URL.revokeObjectURL(image.imageId);
-          } else if (image.imageId.startsWith('dicomfile://blob:')) {
-            URL.revokeObjectURL(image.imageId.replace('dicomfile://', ''));
+          if (image.localUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(image.localUrl);
           }
         });
       }
 
+      console.log('Loading series with images:', currentSeries.images.length);
+      console.log('Series format:', currentSeries.format);
+      console.log('Series viewer type:', currentSeries.viewerType);
+
+      // Special handling for DICOMDIR
+      const hasDicomdir = currentSeries.images.some(img => 
+        img.format === 'dicomdir' || 
+        img.file.name.toUpperCase() === 'DICOMDIR' || 
+        img.file.name.toUpperCase().endsWith('.DICOMDIR')
+      );
+      
+      // Special handling for multiple DICOM files
+      const hasMultipleDicomFiles = 
+        currentSeries.images.length > 1 && 
+        currentSeries.images.some(img => 
+          img.format === 'dicom' || 
+          img.file.name.toLowerCase().endsWith('.dcm')
+        );
+
       const newLoadedImages = await Promise.all(
         currentSeries.images.map(async (image) => {
-          let imageId;
+          // Get the file extension
+          const filename = image.file.name;
+          const ext = filename.split('.').pop()?.toLowerCase();
           
-          // Create a blob URL for the file
-          const blob = new Blob([image.file], { type: image.file.type });
-          const blobUrl = URL.createObjectURL(blob);
+          console.log(`Processing image ${filename} with format ${image.format}`);
           
-          if (image.format === 'dicom') {
-            // For DICOM files, use the dicomfile loader
-            imageId = `dicomfile://${blobUrl}`;
-          } else {
-            // For other image types, use the regular URL
-            imageId = blobUrl;
-          }
-
+          // Use the information from the processed image
           return {
             localUrl: image.localUrl,
             analysis: image.analysis,
             metadata: image.metadata,
-            imageId,
-            file: image.file
+            imageId: image.imageId, // Already has correct format with blob URL and filename
+            file: image.file,
+            format: image.format // Make sure format is passed through
           };
         })
       );
 
-      setViewportState((prev) => ({
-        ...prev,
-        loadedImages: newLoadedImages,
-        currentImageIndex: 0
-      }));
+      console.log('Loaded images:', newLoadedImages.length);
+      if (newLoadedImages.length > 0) {
+        console.log('First image format:', newLoadedImages[0]?.format);
+        console.log('First image ID:', newLoadedImages[0]?.imageId);
+      }
+
+      // Update both loadedImages and currentImageIndex in a single update
+      setViewportState((prev) => {
+        const newState = {
+          ...prev,
+          loadedImages: newLoadedImages,
+          currentImageIndex: 0
+        };
+        
+        console.log('New viewport state to be set:', {
+          loadedImagesLength: newLoadedImages.length,
+          firstImageId: newLoadedImages[0]?.imageId,
+          currentImageIndex: 0,
+          hasDicomdir: hasDicomdir,
+          hasMultipleDicomFiles: hasMultipleDicomFiles
+        });
+        
+        return newState;
+      });
 
       showToast({
         title: 'Series Loaded',
-        description: `Successfully loaded ${newLoadedImages.length} images into viewers`
+        description: hasDicomdir 
+          ? `Loaded DICOMDIR with ${newLoadedImages.length} related files`
+          : hasMultipleDicomFiles
+            ? `Loaded ${newLoadedImages.length} DICOM files as a volume`
+            : `Loaded ${newLoadedImages.length} images into the viewer`
       });
-
-    } catch (err) {
-      console.error('Error loading series:', err);
+    } catch (error) {
+      console.error('Error loading series:', error);
       showToast({
-        title: 'Error',
-        description: 'Failed to load image series. Please ensure files are valid DICOM images.',
+        title: 'Error Loading Series',
+        description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive'
       });
     }
-  }, [currentSeries, showToast, viewportState.loadedImages]);
+  }, [currentSeries, viewportState.loadedImages, showToast]);
 
   const handleSendMessage = useCallback(async (command: any) => {
     if (!message.trim()) return;
@@ -805,10 +908,6 @@ function RightPanel({ isExpanded, onExpandedChange, viewportState, setViewportSt
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error: Failed to send message' }]);
     }
   }, [message, sendTextMessage]);
-
-  const dismissToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  }, []);
 
   const handleUploadComplete = useCallback(async (files: File[]) => {
     if (!files || files.length === 0) {
@@ -1078,14 +1177,15 @@ function DetachedEventLog({ onAttach }: { onAttach: () => void }) {
 function App() {
   const [showMediaControls, setShowMediaControls] = useState(true);
   const [isEventLogDetached, setIsEventLogDetached] = useState(false);
-  const [activeViewport, setActiveViewport] = useState("AXIAL");
-  const [layout, setLayout] = useState("2x2");
+  const [activeViewport, setActiveViewport] = useState<ViewportType>("AXIAL");
+  const [layout, setLayout] = useState<ViewportLayout>("2x2");
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [loadedImages, setLoadedImages] = useState<LoadedImage[]>([]);
   const [expandedViewport, setExpandedViewport] = useState<ViewportType | null>(null);
+  const [activeTool, setActiveTool] = useState<Tool>(null);
 
   const DEFAULT_PANEL_WIDTH = 320;
   const COLLAPSED_PANEL_WIDTH = 48;
@@ -1108,11 +1208,11 @@ function App() {
     }
   }, []);
 
-  const handleThemeChange = (newTheme: React.SetStateAction<string>) => setTheme(newTheme);
+  const handleThemeChange = (newTheme: 'light' | 'dark') => setTheme(newTheme);
 
-  const handleLayoutChange = (newLayout: React.SetStateAction<string>) => {
+  const handleLayoutChange = (newLayout: ViewportLayout) => {
     setLayout(newLayout);
-    setActiveViewport(null as unknown as string);
+    setActiveViewport("AXIAL");
   };
 
   const handleFullscreenToggle = () => {
@@ -1134,8 +1234,7 @@ function App() {
   const rightWidth = panelWidth(rightPanelCollapsed);
 
   return (
-    <div className="medical-viewer w-screen h-screen overflow-hidden relative">
-      <MediaControlPanel />
+    <div className="medical-viewer w-screen h-screen overflow-hidden relative bg-white dark:bg-[#0a0d13]">
       {isEventLogDetached && (
         <DetachedEventLog onAttach={() => setIsEventLogDetached(false)} />
       )}
@@ -1146,34 +1245,37 @@ function App() {
         <LeftToolbar
           isExpanded={!leftPanelCollapsed}
           onExpandedChange={(expanded) => setLeftPanelCollapsed(!expanded)}
+          activeTool={activeTool}
+          setActiveTool={setActiveTool}
+          theme={theme}
+          onThemeChange={handleThemeChange}
+          layout={layout as ViewportLayout}
+          onLayoutChange={handleLayoutChange}
+          onToggleFullscreen={handleFullscreenToggle}
         />
       </Panel>
 
       <div
-        className="fixed top-0 bottom-0 transition-all duration-200 overflow-hidden"
+        className="fixed top-0 bottom-0 transition-all duration-200 overflow-hidden bg-white dark:bg-[#0a0d13]"
         style={{
           left: `${leftWidth}px`,
           right: `${rightWidth}px`,
           width: `calc(100% - ${leftWidth}px - ${rightWidth}px)`
         }}
       >
-        <TopToolbar 
-          theme={theme as 'dark' | 'light'}
-          onThemeChange={handleThemeChange}
-          layout={layout as ViewportLayout}
-          onLayoutChange={handleLayoutChange}
-          onToggleFullscreen={handleFullscreenToggle}
-        />
-        <div className="h-[calc(100vh-3rem)] w-full">
-          <ViewportGrid 
-            layout={layout as ViewportLayout}
-            activeViewport={activeViewport as ViewportType}
-            expandedViewport={expandedViewport as ViewportType | null}
-            onViewportChange={setActiveViewport}
-            onViewportExpand={handleViewportExpand}
-            loadedImages={loadedImages}
-            currentImageIndex={currentImageIndex}
-          />
+        <div className="h-full flex flex-col overflow-hidden">
+          <div className="flex-grow flex flex-col">
+            <ViewportGrid
+              layout={layout as ViewportLayout}
+              activeViewport={activeViewport as ViewportType}
+              expandedViewport={expandedViewport}
+              onViewportChange={setActiveViewport}
+              onViewportExpand={handleViewportExpand}
+              loadedImages={loadedImages}
+              currentImageIndex={currentImageIndex}
+              activeTool={activeTool}
+            />
+          </div>
         </div>
       </div>
 
@@ -1211,6 +1313,14 @@ function App() {
               setLeftPanelCollapsed(updatedState.leftPanelCollapsed);
               setRightPanelCollapsed(updatedState.rightPanelCollapsed);
               setTheme(updatedState.theme);
+              
+              // Also set loadedImages and currentImageIndex from the functional update
+              if ('loadedImages' in updatedState) {
+                setLoadedImages(updatedState.loadedImages as LoadedImage[]);
+              }
+              if ('currentImageIndex' in updatedState) {
+                setCurrentImageIndex(updatedState.currentImageIndex);
+              }
             } else {
               setActiveViewport(newState.activeViewport ?? activeViewport);
               setLayout(newState.layout ?? layout);

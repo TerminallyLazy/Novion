@@ -23,7 +23,7 @@ export default function RootLayout({
       </head>
       <body className={cn(
         inter.className,
-        "min-h-screen bg-background text-foreground",
+        "min-h-screen bg-white dark:bg-[#0a0d13] text-foreground",
         "overflow-hidden"
       )}>
         <Providers>

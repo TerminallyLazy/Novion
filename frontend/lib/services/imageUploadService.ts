@@ -28,6 +28,7 @@ export interface ProcessedImage {
   file: File;
   format: string;
   localUrl: string;
+  imageId: string;
   analysis?: ImageAnalysis | null;
   metadata?: {
     modality?: string;
@@ -65,6 +66,68 @@ export async function processImageSeries(files: File[]): Promise<ImageSeries> {
     throw new Error('No files provided');
   }
 
+  // Check for DICOMDIR file in the uploaded files
+  const dicomdirFile = files.find(file => 
+    file.name.toUpperCase() === 'DICOMDIR' || 
+    file.name.toUpperCase().endsWith('.DICOMDIR')
+  );
+
+  // Special handling for DICOMDIR
+  if (dicomdirFile) {
+    console.log('DICOMDIR file detected, setting up for 3D viewer');
+    // We'll create a special entry for the DICOMDIR file
+    const localUrl = URL.createObjectURL(dicomdirFile);
+    
+    const processedImages: ProcessedImage[] = [{
+      file: dicomdirFile,
+      format: 'dicomdir',
+      localUrl,
+      imageId: `${localUrl}#${dicomdirFile.name}`,
+      metadata: {
+        modality: 'CT', // Assume CT for now
+        studyDate: new Date().toISOString().slice(0, 10),
+        seriesNumber: '1',
+        instanceNumber: '1',
+      }
+    }];
+    
+    // Also add all the other files, which are likely referenced by the DICOMDIR
+    const otherFiles = files.filter(file => file !== dicomdirFile);
+    
+    for (const file of otherFiles) {
+      const otherLocalUrl = URL.createObjectURL(file);
+      processedImages.push({
+        file,
+        format: 'dicom',
+        localUrl: otherLocalUrl,
+        imageId: `${otherLocalUrl}#${file.name}`,
+        metadata: {
+          modality: 'CT', // Assume CT for now
+          studyDate: new Date().toISOString().slice(0, 10),
+          seriesNumber: '1',
+          instanceNumber: processedImages.length.toString(),
+        }
+      });
+    }
+    
+    return {
+      id: generateSeriesId(),
+      images: processedImages,
+      format: 'dicomdir',
+      viewerType: 'dicom',
+      metadata: {
+        modality: 'CT',
+        studyDate: new Date().toISOString().slice(0, 10),
+        seriesDescription: `DICOMDIR Series ${generateSeriesId()}`,
+        isMultiFrame: true,
+        totalFrames: processedImages.length
+      }
+    };
+  }
+
+  // If we have multiple files, sort them by name for proper sequence
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  
   const processedImages: ProcessedImage[] = [];
   
   for (const file of files) {
@@ -79,10 +142,30 @@ export async function processImageSeries(files: File[]): Promise<ImageSeries> {
         analysis = await analyzeImage(file);
       }
       
+      // Generate imageId based on file format
+      // This is critical for cornerstone to load the image correctly
+      let imageId = localUrl;
+      
+      // Add file name to the blob URL to help with format detection
+      if (formatInfo.format === 'dicom') {
+        // For DICOM files, use the dicomfile prefix
+        imageId = `${localUrl}#${file.name}`;
+        console.log(`Created DICOM image ID for ${file.name}: ${imageId}`);
+      } else if (formatInfo.format === 'png' || formatInfo.format === 'jpg') {
+        // For standard image formats, pass as is with filename
+        imageId = `${localUrl}#${file.name}`;
+        console.log(`Created standard image ID for ${file.name}: ${imageId}`);
+      } else if (formatInfo.format === 'nifti') {
+        // For NIFTI files
+        imageId = `${localUrl}#${file.name}`;
+        console.log(`Created NIFTI image ID for ${file.name}: ${imageId}`);
+      }
+      
       processedImages.push({
         file,
         format: formatInfo.format,
         localUrl,
+        imageId,
         analysis,
         metadata
       });
@@ -106,8 +189,9 @@ export async function processImageSeries(files: File[]): Promise<ImageSeries> {
   const primaryFormat = Object.entries(formatCounts)
     .sort(([,a], [,b]) => b - a)[0][0];
 
-  // Determine viewer type based on primary format
-  const viewerType = primaryFormat === 'dicom' ? 'dicom' : 'image';
+  // For multiple DICOM files, always use the 3D viewer
+  const isMultipleFiles = validImages.length > 1;
+  const viewerType = primaryFormat === 'dicom' || primaryFormat === 'dicomdir' ? 'dicom' : 'image';
 
   // Create series metadata from first valid image
   const firstImage = validImages[0];
@@ -115,7 +199,7 @@ export async function processImageSeries(files: File[]): Promise<ImageSeries> {
     modality: firstImage.metadata?.modality,
     studyDate: firstImage.metadata?.studyDate,
     seriesDescription: `Uploaded Series ${generateSeriesId()}`,
-    isMultiFrame: validImages.length > 1,
+    isMultiFrame: isMultipleFiles,
     totalFrames: validImages.length
   };
 
@@ -149,6 +233,11 @@ async function determineFileFormat(file: File): Promise<FileFormatInfo> {
     } catch (error) {
       console.error('Error verifying DICOM format:', error);
     }
+  }
+  
+  // Check for NIFTI files
+  if (ext === 'nii' || ext === 'gz' || file.name.toLowerCase().endsWith('.nii.gz')) {
+    return { format: 'nifti', viewerType: 'dicom' };
   }
   
   // Then check for other image formats

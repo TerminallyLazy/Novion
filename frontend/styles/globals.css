@@ -55,9 +55,13 @@
   }
 
   .medical-viewer {
-    background-color: hsl(var(--viewer-background));
+    background-color: white;
     color: hsl(var(--foreground));
     min-height: 100vh;
+  }
+
+  .dark .medical-viewer {
+    background-color: hsl(224 30% 6%);
   }
 
   .top-header {
@@ -67,8 +71,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: hsl(215 12% 65%); /* Darkened header for light mode */
-    border-color: hsl(215 12% 60%);
+    background-color: white;
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .top-header-section {
@@ -454,7 +458,7 @@
   }
 
   .dark .top-header {
-    background-color: hsl(224 30% 8%);
+    background-color: hsl(224 30% 10%);
     border-color: hsl(224 35% 14%);
   }
 }

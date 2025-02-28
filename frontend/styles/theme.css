@@ -10,23 +10,23 @@
   }
 
   :root {
-    /* Light mode - medical imaging theme - optimized for radiologists in dark rooms */
-    --background: 215 15% 60%; /* Further darkened and desaturated */
+    /* Light mode - medical imaging theme */
+    --background: 0 0% 100%; /* White background */
     --foreground: 215 20% 30%;
     
-    --card: 215 12% 63%; /* Significantly darkened for better dark room viewing */
+    --card: 0 0% 100%; /* White card background */
     --card-foreground: 215 20% 30%;
  
-    --popover: 215 12% 63%;
+    --popover: 0 0% 100%;
     --popover-foreground: 215 20% 30%;
  
-    --primary: 196 40% 32%; /* More muted primary color to reduce eye strain */
+    --primary: 196 40% 32%;
     --primary-foreground: 215 10% 85%;
  
-    --secondary: 215 10% 58%; /* Further darkened */
+    --secondary: 215 10% 95%;
     --secondary-foreground: 215 20% 30%;
  
-    --muted: 215 10% 60%;
+    --muted: 215 10% 95%;
     --muted-foreground: 215 15% 40%;
  
     --accent: 196 40% 32%;
@@ -35,14 +35,14 @@
     --destructive: 0 50% 45%;
     --destructive-foreground: 215 10% 85%;
 
-    --border: 215 10% 55%; /* Darkened more for subtle contrast */
-    --input: 215 10% 55%;
+    --border: 215 10% 90%;
+    --input: 215 10% 90%;
     --ring: 196 40% 32%;
 
     --radius: 0.75rem;
 
     /* Medical Viewer Specific */
-    --viewer-background: 215 10% 50%; /* Darkened significantly for better viewing in dark rooms */
+    --viewer-background: 0 0% 100%; /* White for better contrast */
     --annotation-primary: 196 40% 32%;
     --annotation-secondary: 280 40% 32%;
     --measurement-color: 196 40% 32%;

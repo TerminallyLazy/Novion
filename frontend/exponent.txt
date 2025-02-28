@@ -22,7 +22,7 @@ Key Features
    - Image segmentation capabilities
    - Real-time viewport synchronization
 
-3. AI Integration & Analysis
+3. AI Integration & Analysis (gemini-2.0-flash-exp)
    - Advanced Medical AI Integration:
      * Powered by Google Gemini 2.0 API with multimodal capabilities
      * Real-time medical image analysis and interpretation
@@ -35,7 +35,7 @@ Key Features
        - PET scans
        - Nuclear medicine imaging
 
-   - Computer Vision Capabilities:
+   - Computer Vision Capabilities: (gemini-2.0-flash-exp)
      * Automated lesion detection and segmentation
      * Anatomical structure identification
      * Volumetric measurements and analysis
@@ -54,7 +54,7 @@ Key Features
      * Treatment progress monitoring
      * Quantitative imaging biomarkers
 
-   - Interactive AI Assistance:
+   - Interactive AI Assistance: (gemini-2.0-flash-exp)
      * Natural language interaction for queries
      * Real-time voice command support
      * Contextual medical information provision
@@ -72,7 +72,7 @@ Key Features
      * Integration with clinical guidelines
      * Custom report templating
 
-   - Real-time Processing:
+   - Real-time Processing: 
      * Concurrent analysis during image viewing
      * Dynamic response to viewport changes
      * Immediate feedback on measurements
@@ -80,7 +80,7 @@ Key Features
      * Progressive result refinement
      * Adaptive processing based on context
 
-   - Quality Assurance:
+   - Quality Assurance: 
      * Image quality assessment
      * Protocol compliance checking
      * Radiation dose optimization
@@ -88,7 +88,7 @@ Key Features
      * Positioning verification
      * Technical parameter validation
 
-   - Integration Features:
+   - Integration Features: Gemini 2 Live API (gemini-2.0-flash-exp)
      * Bi-directional WebSocket communication
      * Real-time audio transcription and response
      * Seamless integration with viewer tools
@@ -168,11 +168,11 @@ The project follows a modular architecture with clear separation of concerns:
 
 2. Lib/
    - api/: 
-     * Gemini API integration with Python WebSocket server
+     * Gemini API integration with Python WebSocket server (gemini-2.0-flash-exp)
      * Type-safe API client with RPC-style interfaces
      * Structured response handling for analysis results
    - hooks/: 
-     * useGeminiConnection for AI communication
+     * useGeminiConnection for AI communication (gemini-2.0-flash-exp)
      * useMedia for device management
      * useRealtimeMutation for streaming updates
    - utils/: 
@@ -185,7 +185,7 @@ The project follows a modular architecture with clear separation of concerns:
 3. Features/
    - Real-time audio processing:
      * 16kHz PCM audio capture
-     * WebSocket streaming to Gemini API
+     * WebSocket streaming to Gemini 2 Live API (gemini-2.0-flash-exp)
      * 24kHz audio playback
      * Automatic audio queue management
    - Bi-directional communication with AI services
