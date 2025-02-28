@@ -50,6 +50,17 @@ class State(MessagesState):
 
 
 def supervisor_node(state: State) -> Command[Literal["pharmacist", "researcher", "medical_analyst", "__end__"]]:
+    """
+    Determines the next conversation routing command based on the current state.
+    
+    This function builds a message list by prepending a system prompt to the current state messages. It then sanitizes any message names to conform to expected naming standards before invoking a language model to produce a structured output. If the model returns "FINISH", this is converted to the termination directive.
+    
+    Args:
+        state: The current conversation state containing the list of messages.
+    
+    Returns:
+        A Command indicating the next role ("pharmacist", "researcher", "medical_analyst") or termination ("__end__").
+    """
     messages = [
         {"role": "system", "content": system_prompt},
     ] + state["messages"]
@@ -131,6 +142,11 @@ app = FastAPI()
 
 @app.get("/")
 def home():
+    """
+    Return a welcome message for the RadSys API.
+    
+    This function serves as the home endpoint for the FastAPI application, returning a JSON object that confirms the API is operational.
+    """
     return {"message": "Welcome to the RadSys API"}
 
 add_routes(app, graph, path="/graph")
