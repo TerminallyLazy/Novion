@@ -70,7 +70,7 @@ import {
 } from '@/lib/utils/cornerstoneInit';
 import { ViewportManager } from '@/components/ViewportManager';
 import { LoadedImage } from '@/lib/types';
-
+import NovionAgent from "@/components/novionAgents";
 // Add type declarations for the Web Speech API
 
 type ViewportLayout = "1x1" | "2x2" | "3x3";
@@ -1307,16 +1307,7 @@ function NovionAgentsModal({ isOpen, onClose }: NovionAgentsModalProps) {
       </div>
 
       {/* Modal Content - iframe */}
-      <div className="w-full h-[calc(100%-44px)] overflow-hidden">
-        <iframe 
-          src="http://0.0.0.0:8000/graph/playground/" 
-          className="w-full h-full border-none"
-          title="Novion Agents"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-          loading="lazy"
-          allow="fullscreen"
-        />
-      </div>
+      <NovionAgent />
 
       {/* Resize Handle */}
       <div

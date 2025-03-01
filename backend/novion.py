@@ -121,21 +121,20 @@ builder.add_node("medical_analyst", medical_analyst_node)
 builder.add_node("researcher", researcher_node)
 graph = builder.compile()
 
-graph_image = graph.get_graph().draw_mermaid_png()
-with open("graph_image.png", "wb") as f:
-    f.write(graph_image)
+def process_query(query: str):
+    """Process user query using the compiled graph and extract HumanMessage content."""
+    results = []
+    responses = []
 
+    # Stream through the LangChain response
+    for s in graph.stream({"messages": [("user", query)]}, subgraphs=True):
+        # Extract only HumanMessage contents
+        for key, value in s[1].items():
+            if "messages" in value:
+                for message in value["messages"]:
+                    if isinstance(message, HumanMessage):
+                        results.append(message.content)  # Collect only HumanMessage content
+            if "responses" in value:
+                responses.extend(value["responses"])  # Collect responses
 
-for s in graph.stream(
-    {
-        "messages": [
-            (
-                "user",
-                "What are some current trends in medical imaging?",
-            )
-        ]
-    },
-    subgraphs=True,
-):
-    print(s)
-    print("----")
+    return results[0]   # Return clean extracted responses and results
