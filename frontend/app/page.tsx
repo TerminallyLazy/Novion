@@ -39,6 +39,16 @@ import {
   PlayCircle,
   ZoomIn,
   X,
+  Network,
+  Minimize2,
+  Clapperboard,
+  LayoutGrid,
+  Loader2,
+  Maximize,
+  Minimize,
+  LayoutTemplate,
+  Camera,
+  Share,
 } from "lucide-react";
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -239,12 +249,13 @@ interface ToolbarProps {
   setActiveTool?: React.Dispatch<React.SetStateAction<Tool>>;
 }
 
-function LeftToolbar({ isExpanded, onExpandedChange, activeTool, setActiveTool, theme, onThemeChange, layout, onLayoutChange, onToggleFullscreen }: ToolbarProps & {
+function LeftToolbar({ isExpanded, onExpandedChange, activeTool, setActiveTool, theme, onThemeChange, layout, onLayoutChange, onToggleFullscreen, setIsNovionModalOpen }: ToolbarProps & {
   theme: 'light' | 'dark';
   onThemeChange: (theme: 'light' | 'dark') => void;
   layout: ViewportLayout;
   onLayoutChange: (layout: ViewportLayout) => void;
   onToggleFullscreen: () => void;
+  setIsNovionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const [toolHistory, setToolHistory] = useState<Tool[]>([]);
   const [window, setWindow] = useState(2000);
@@ -416,41 +427,6 @@ function LeftToolbar({ isExpanded, onExpandedChange, activeTool, setActiveTool, 
         </div>
 
         <div className="tool-section">
-          <h3 className="tool-section-title">Workspace</h3>
-          <div className="tool-grid">
-            <CustomToolButton
-              icon={Layout}
-              label="Layout"
-              onClick={cycleLayout}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={theme === 'dark' ? Sun : Moon}
-              label={theme === 'dark' ? "Light Mode" : "Dark Mode"}
-              onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={Maximize2}
-              label="Fullscreen"
-              onClick={onToggleFullscreen}
-              className="flex justify-center items-center"
-            />
-            <CustomToolButton
-              icon={RotateCcw}
-              label="Reset"
-              onClick={() => {
-                toast({
-                  title: "Reset View",
-                  description: "Resetting to default view...",
-                });
-              }}
-              className="flex justify-center items-center"
-            />
-          </div>
-        </div>
-
-        <div className="tool-section">
           <h3 className="tool-section-title">Tools</h3>
           <div className="tool-grid">
             <CustomToolButton
@@ -493,6 +469,41 @@ function LeftToolbar({ isExpanded, onExpandedChange, activeTool, setActiveTool, 
                 toast({
                   title: "Settings",
                   description: "Opening settings...",
+                });
+              }}
+              className="flex justify-center items-center"
+            />
+          </div>
+        </div>
+
+        <div className="tool-section">
+          <h3 className="tool-section-title">Workspace</h3>
+          <div className="tool-grid">
+            <CustomToolButton
+              icon={Layout}
+              label="Layout"
+              onClick={cycleLayout}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={theme === 'dark' ? Sun : Moon}
+              label={theme === 'dark' ? "Light Mode" : "Dark Mode"}
+              onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={Maximize2}
+              label="Fullscreen"
+              onClick={onToggleFullscreen}
+              className="flex justify-center items-center"
+            />
+            <CustomToolButton
+              icon={RotateCcw}
+              label="Reset"
+              onClick={() => {
+                toast({
+                  title: "Reset View",
+                  description: "Resetting to default view...",
                 });
               }}
               className="flex justify-center items-center"
@@ -1174,6 +1185,151 @@ function DetachedEventLog({ onAttach }: { onAttach: () => void }) {
   );
 }
 
+// Add new component for the Novion Agents Modal
+interface NovionAgentsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function NovionAgentsModal({ isOpen, onClose }: NovionAgentsModalProps) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState({ width: 1024, height: 768 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      // Center the modal on open
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      setPosition({
+        x: Math.max(0, (viewportWidth - size.width) / 2),
+        y: Math.max(0, (viewportHeight - size.height) / 2)
+      });
+    }
+  }, [isOpen, size.width, size.height]);
+
+  // Handle drag start
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target instanceof HTMLElement && e.target.dataset.handle !== 'resize') {
+      setIsDragging(true);
+      setStartPos({
+        x: e.clientX - position.x,
+        y: e.clientY - position.y
+      });
+    }
+  };
+
+  // Handle resize start
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    setStartPos({
+      x: e.clientX,
+      y: e.clientY
+    });
+    setStartSize({
+      width: size.width,
+      height: size.height
+    });
+  };
+
+  // Handle mouse move for both dragging and resizing
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        setPosition({
+          x: Math.max(0, e.clientX - startPos.x),
+          y: Math.max(0, e.clientY - startPos.y)
+        });
+      } else if (isResizing) {
+        const newWidth = Math.max(400, startSize.width + (e.clientX - startPos.x));
+        const newHeight = Math.max(300, startSize.height + (e.clientY - startPos.y));
+        setSize({
+          width: newWidth,
+          height: newHeight
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, isResizing, startPos, startSize, position]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      ref={modalRef}
+      className="fixed bg-white dark:bg-[#141a29] rounded-lg shadow-2xl overflow-hidden border border-[#4cedff] dark:border-[#4cedff] z-[9999]"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
+        cursor: isDragging ? 'grabbing' : 'default'
+      }}
+      onMouseDown={handleMouseDown}
+    >
+      {/* Modal Header */}
+      <div 
+        className="flex items-center justify-between p-3 bg-gradient-to-r from-[#0c1526] to-[#1b2538] text-white border-b border-[#2D3848]"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
+        <div className="flex items-center gap-2">
+          <Network className="h-5 w-5 text-[#4cedff]" />
+          <span className="font-medium">Novion Agents</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md hover:bg-[#2D3848] text-white/80 hover:text-[#4cedff] transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Modal Content - iframe */}
+      <div className="w-full h-[calc(100%-44px)] overflow-hidden">
+        <iframe 
+          src="http://0.0.0.0:8000/graph/playground/" 
+          className="w-full h-full border-none"
+          title="Novion Agents"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+          loading="lazy"
+          allow="fullscreen"
+        />
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize"
+        onMouseDown={handleResizeMouseDown}
+        data-handle="resize"
+      >
+        <div className="w-3 h-3 border-r-2 border-b-2 border-[#4cedff] absolute bottom-2 right-2" />
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [showMediaControls, setShowMediaControls] = useState(true);
   const [isEventLogDetached, setIsEventLogDetached] = useState(false);
@@ -1186,6 +1342,7 @@ function App() {
   const [loadedImages, setLoadedImages] = useState<LoadedImage[]>([]);
   const [expandedViewport, setExpandedViewport] = useState<ViewportType | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>(null);
+  const [isNovionModalOpen, setIsNovionModalOpen] = useState(false);
 
   const DEFAULT_PANEL_WIDTH = 320;
   const COLLAPSED_PANEL_WIDTH = 48;
@@ -1252,6 +1409,7 @@ function App() {
           layout={layout as ViewportLayout}
           onLayoutChange={handleLayoutChange}
           onToggleFullscreen={handleFullscreenToggle}
+          setIsNovionModalOpen={setIsNovionModalOpen}
         />
       </Panel>
 
@@ -1338,6 +1496,33 @@ function App() {
           }}
         />
       </Panel>
+
+      {/* Floating Novion Agents button */}
+      <button
+        onClick={() => setIsNovionModalOpen(true)}
+        className={`fixed bottom-10 left-40 transform -translate-x-1/2 z-30 
+                  flex items-center gap-2 px-4 py-2 rounded-full
+                  ${theme === 'dark' 
+                    ? 'bg-[#0c1526] text-[#4cedff] border border-[#4cedff]/70 shadow-sm hover:shadow-md hover:border-[#4cedff]' 
+                    : 'bg-white text-[#0087a3] border border-[#0087a3]/60 shadow-sm hover:shadow-md hover:border-[#0087a3]'}
+                  transition-all duration-200 hover:scale-102`}
+      >
+        <Network className={`h-5 w-5 ${theme === 'dark' ? 'text-[#4cedff]' : 'text-[#0087a3]'}`} />
+        <span>Novion Agents</span>
+      </button>
+
+      {/* Novion Agents Modal */}
+      <NovionAgentsModal 
+        isOpen={isNovionModalOpen} 
+        onClose={() => setIsNovionModalOpen(false)} 
+      />
+
+      {/* Add the MediaControlPanel */}
+      {showMediaControls && (
+        <MediaControlPanel 
+          onClose={() => setShowMediaControls(false)} 
+        />
+      )}
     </div>
   );
 }

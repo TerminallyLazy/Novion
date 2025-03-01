@@ -3,7 +3,7 @@ import { api } from 'dicomweb-client';
 import * as csTools3d from '@cornerstonejs/tools';
 import { ToolGroupManager } from '@cornerstonejs/tools';
 import { BrushTool, SegmentationDisplayTool } from '@cornerstonejs/tools';
-import { volumeLoader, Enums } from '@cornerstonejs/core';
+import { volumeLoader, Enums, RenderingEngine } from '@cornerstonejs/core';
 import { Enums as ToolEnums } from '@cornerstonejs/tools';
 
 interface ImageIdParams {
@@ -180,7 +180,7 @@ export async function setupImageStack(element: HTMLElement, imageIds: string[]):
     const firstImageId = imageIds[0];
     console.log('Setting up image stack with first imageId:', firstImageId);
     
-    // Extract scheme from the image ID (if it exists)
+    // Extract scheme from the image ID
     let scheme = '';
     const colonIndex = firstImageId.indexOf(':');
     if (colonIndex > 0) {
@@ -198,68 +198,60 @@ export async function setupImageStack(element: HTMLElement, imageIds: string[]):
         console.warn('No scheme detected in imageId and unable to infer');
       }
     }
-    
-    // Traditional stack approach for cornerstoneTools
+
+    // Create a stack for cornerstoneTools
     const stackId = `stack-${Date.now()}`;
     
-    // Create a stack state object for cornerstone tools
+    // Define the stack
     const stack = {
-      currentImageIdIndex: 0,
       imageIds: imageIds,
+      currentImageIdIndex: 0
     };
+
+    // Create a more proper mapping for cornerstone tools
+    const toolsState = csTools3d as any;
     
-    // Store stack in the cornerstone tools state - using a type-safe approach
-    try {
-      // Cast to any to bypass TypeScript restrictions for setting stacks directly
-      const toolsState = csTools3d as any;
-      
-      // Initialize state if not exists
-      if (!toolsState.state) {
-        toolsState.state = {};
-      }
-      
-      // Initialize stacks if not exists
-      if (!toolsState.state.stacks) {
-        toolsState.state.stacks = {};
-      }
-      
-      // Add our stack
-      toolsState.state.stacks[stackId] = stack;
-      
-      // Associate stack with element
-      if (element) {
-        // Create a UUID for the element if it doesn't have one
-        const elementUuid = element.dataset.uuid || `element-${Date.now()}`;
-        element.dataset.uuid = elementUuid;
-        
-        // Set up stack registry if needed
-        if (!toolsState.state.stackRegistry) {
-          toolsState.state.stackRegistry = new Map();
-        }
-        
-        // Associate the element uuid with the stack id
-        toolsState.state.stackRegistry.set(elementUuid, stackId);
-        
-        console.log('Successfully registered traditional stack for segmentation tools');
-      }
-    } catch (stackError) {
-      console.error('Error setting up traditional stack:', stackError);
+    // Initialize state and stacks if needed
+    if (!toolsState.state) {
+      toolsState.state = {};
     }
     
-    // Try to use the volumeLoader API if available and valid scheme
+    if (!toolsState.state.stacks) {
+      toolsState.state.stacks = {};
+    }
+    
+    // Store stack in cornerstone tools state
+    toolsState.state.stacks[stackId] = stack;
+    
+    // Create a UUID for the element
+    const elementUuid = element.dataset.uuid || `element-${Date.now()}`;
+    element.dataset.uuid = elementUuid;
+    
+    // Set up stack registry if needed
+    if (!toolsState.state.stackRegistry) {
+      toolsState.state.stackRegistry = new Map();
+    }
+    
+    // Associate element with stack
+    toolsState.state.stackRegistry.set(elementUuid, stackId);
+    
+    console.log('Registered traditional stack for segmentation tools');
+    
+    // Try to use the volumeLoader API for compatible schemes
     if (scheme && ['wadouri', 'wadors', 'dicomweb'].includes(scheme.toLowerCase())) {
       try {
-        // Create a unique volumeId
-        const volumeId = `volume-${Date.now()}`;
+        // Create a unique volumeId with proper scheme prefix
+        const volumeId = `cornerstoneStreamingImageVolume:${Date.now()}`;
         
-        // Volume input is expected to be an array of image IDs
-        await volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+        // Create and cache the volume
+        await volumeLoader.createAndCacheVolume(volumeId, {
+          imageIds
+        });
         
         // Add to segmentations module if available
         if (csTools3d.segmentation) {
           const segmentationId = `segmentation-${Date.now()}`;
           
-          // Create a segmentation for the volume
           await csTools3d.segmentation.addSegmentations([{
             segmentationId,
             representation: {
@@ -271,16 +263,14 @@ export async function setupImageStack(element: HTMLElement, imageIds: string[]):
           }]);
           
           console.log('Successfully registered volume and segmentation');
-        } else {
-          console.warn('Segmentation module not available');
         }
       } catch (volumeError) {
-        console.warn('Volume loader failed, but traditional stack is available as fallback:', volumeError);
+        console.warn('Volume loader failed but traditional stack is available:', volumeError);
       }
     } else {
-      console.log('Skipping volume loader due to unsupported scheme, using traditional stack instead');
+      console.log('Using traditional stack approach for non-compatible scheme');
     }
   } catch (error) {
-    console.error('Error setting up image stack for segmentation:', error);
+    console.error('Error setting up image stack:', error);
   }
-} 
+}

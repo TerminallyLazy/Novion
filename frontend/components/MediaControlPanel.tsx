@@ -18,18 +18,18 @@ interface LogEntry {
 
 export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
   // Panel state
-  const [panelSize, setPanelSize] = useState({ width: 400, height: 400 });
+  const [panelSize, setPanelSize] = useState({ width: 320, height: 300 });
   const [isResizing, setIsResizing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState(() => {
-    const width = 400;
-    const height = 400;
+    const width = 320;
+    const height = 300;
     const padding = 16;
     const initialX = window.innerWidth / 2 - width / 2;
     const initialY = window.innerHeight - height - padding;
     return { x: initialX, y: initialY };
   });
-  const [actualHeight, setActualHeight] = useState(120);
+  const [actualHeight, setActualHeight] = useState(100);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const transitionRafRef = useRef<number>();
@@ -41,7 +41,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
   const [isLogMaximized, setIsLogMaximized] = useState(false);
 
   const calculateBounds = useCallback(() => {
-    const currentHeight = isLogExpanded ? panelSize.height : 120;
+    const currentHeight = isLogExpanded ? panelSize.height : 100;
     const padding = 16;
     return {
       maxX: window.innerWidth - (panelSize.width + padding),
@@ -87,7 +87,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
     }
 
     setIsTransitioning(true);
-    const newHeight = isLogExpanded ? panelSize.height : 120;
+    const newHeight = isLogExpanded ? panelSize.height : 100;
     
     transitionRafRef.current = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -127,7 +127,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
     if (!isInitialized) {
       const { maxY, padding } = calculateBounds();
       const initialX = window.innerWidth / 2 - panelSize.width / 2;
-      const initialY = window.innerHeight - (isLogExpanded ? panelSize.height : 120) - padding;
+      const initialY = window.innerHeight - (isLogExpanded ? panelSize.height : 100) - padding;
       setPosition({ x: initialX, y: initialY });
       setIsInitialized(true);
     }
@@ -451,7 +451,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                  isConnected ? "Connected" : "Disconnected"}
               </span>
             </div>
-            {onClose && (
+            {/* {onClose && (
               <button
                 onClick={onClose}
                 className={cn(
@@ -462,7 +462,7 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
               >
                 <X className="h-4 w-4" />
               </button>
-            )}
+            )} */}
           </div>
 
           <div className="flex justify-center gap-2 mb-2">
@@ -661,12 +661,12 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
                 isResizing && "scale-110",
                 "hover:opacity-80"
               )}
-              onMouseDown={handleResizeStart}
-              style={{
-                background: 'linear-gradient(135deg, transparent 50%, #4cedff 50%)',
-                borderBottomRightRadius: '0.5rem',
-                boxShadow: isResizing ? '0 0 10px rgba(76,237,255,0.4)' : 'none',
-              }}
+              // onMouseDown={handleResizeStart}
+              // style={{
+              //   background: 'linear-gradient(135deg, transparent 50%, #4cedff 50%)',
+              //   borderBottomRightRadius: '0.5rem',
+              //   boxShadow: isResizing ? '0 0 10px rgba(76,237,255,0.4)' : 'none',
+              // }}
             />
           )}
         </div>
