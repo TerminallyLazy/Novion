@@ -42,5 +42,5 @@ def search_wikem(query: str) -> str:
         return "Failed to retrieve the webpage"
 
 
-result = search_wikem("hypokalemia")
-print(result)
+#result = search_wikem("hypokalemia")
+#print(result)
