@@ -37,6 +37,9 @@ import {
   StackScrollMouseWheelTool,
   annotation,
   VolumeRotateMouseWheelTool,
+  CircleScissorsTool,
+  RectangleScissorsTool,
+  SphereScissorsTool,
 } from '@cornerstonejs/tools';
 
 // DICOM Image Loaders
@@ -267,6 +270,11 @@ function addTools(): void {
   addTool(CrosshairsTool);
   addTool(VolumeRotateMouseWheelTool);
   addTool(SegmentationDisplayTool);
+  
+  // Add segmentation-specific tools
+  addTool(CircleScissorsTool);
+  addTool(RectangleScissorsTool);
+  addTool(SphereScissorsTool);
 }
 
 /**
@@ -447,6 +455,18 @@ export type UiToolType =
   | "statistics"
   | "segment"
   | "compare"
+  | "rectangleRoi"
+  | "ellipticalRoi"
+  | "brush"
+  | "circleScissor"
+  | "rectangleScissor"
+  | "sphereScissor"
+  | "eraser"
+  | "threshold"
+  | "magnify"
+  | "stackScroll"
+  | "crosshairs"
+  | "volumeRotate"
   | null;
 
 /**
@@ -467,16 +487,34 @@ export function mapUiToolToCornerstone3D(tool: UiToolType): string {
       return LengthTool.toolName;
     case "area":
       return RectangleROITool.toolName;
+    case "rectangleRoi":
+      return RectangleROITool.toolName;
+    case "ellipticalRoi":
+      return EllipticalROITool.toolName;
     case "angle":
       return AngleTool.toolName;
     case "profile":
       return ProbeTool.toolName;
     case "segment":
+    case "brush":
       return BrushTool.toolName;
+    case "magnify":
+      return MagnifyTool.toolName;
+    case "stackScroll":
+      return StackScrollTool.toolName;
+    case "crosshairs":
+      return CrosshairsTool.toolName;
+    case "volumeRotate":
+      return VolumeRotateMouseWheelTool.toolName;
     // For tools we don't have an equivalent, fall back to Pan
     case "diagnose":
     case "statistics":
     case "compare":
+    case "circleScissor":
+    case "rectangleScissor":
+    case "sphereScissor":
+    case "eraser":
+    case "threshold":
     case null:
       return PanTool.toolName;
     default:
@@ -908,5 +946,138 @@ export async function canLoadAsVolume(imageIds: string[]): Promise<boolean> {
   } catch (error) {
     console.error('Error determining if images can form a volume:', error);
     return false;
+  }
+}
+
+/**
+ * Setup segmentation for a viewport
+ * @param toolGroupId The ID of the tool group
+ * @param volumeId The ID of the volume to segment
+ * @param segmentationId The ID to assign to the new segmentation
+ * @returns The segmentation representation data
+ */
+export async function setupSegmentation(
+  toolGroupId: string,
+  volumeId: string,
+  segmentationId: string = 'segmentation-1'
+): Promise<any> {
+  // Create a segmentation of the same resolution as the source data
+  const segmentationVolume = await segmentation.createLabelMapVolumeFromVolume(
+    volumeId,
+    segmentationId
+  );
+  
+  // Add the segmentation and set it active
+  await segmentation.addSegmentation({
+    segmentationId,
+    representation: {
+      type: segmentation.representationTypes.LABELMAP,
+      data: {
+        volumeId: segmentationId,
+      },
+    },
+  });
+
+  // Add the segmentation representation to the tool group
+  const segmentationRepresentationConfig = {
+    segmentationId,
+    type: segmentation.representationTypes.LABELMAP,
+    displayOptions: {
+      outlineWidth: 2,
+      renderOutline: true,
+      visible: true,
+      opacity: 0.7,
+    },
+  };
+
+  await segmentation.addSegmentationRepresentation(
+    toolGroupId,
+    segmentationId,
+    segmentation.representationTypes.LABELMAP,
+    segmentationRepresentationConfig
+  );
+
+  return segmentationRepresentationConfig;
+}
+
+/**
+ * Configure a tool group with segmentation tools
+ * @param toolGroupId The ID of the tool group
+ * @param options Configuration options
+ * @returns The configured tool group
+ */
+export function configureToolGroupForSegmentation(
+  toolGroupId: string,
+  options: {
+    brushSize?: number;
+    brushThreshold?: number;
+  } = {}
+): any {
+  const { brushSize = 15, brushThreshold = 100 } = options;
+  const toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+  
+  if (!toolGroup) {
+    console.error(`Tool group ${toolGroupId} not found`);
+    return null;
+  }
+
+  // Add the segmentation tools to the tool group
+  toolGroup.addTool(SegmentationDisplayTool.toolName);
+  toolGroup.addTool(BrushTool.toolName);
+  toolGroup.addTool(CircleScissorsTool.toolName);
+  toolGroup.addTool(RectangleScissorsTool.toolName);
+  toolGroup.addTool(SphereScissorsTool.toolName);
+
+  // Set the segmentation display tool to be enabled
+  toolGroup.setToolEnabled(SegmentationDisplayTool.toolName);
+
+  // Configure brush tool properties
+  const brushToolInstance = toolGroup.getToolInstance(BrushTool.toolName);
+  if (brushToolInstance) {
+    brushToolInstance.configuration.brushSize = brushSize;
+    brushToolInstance.configuration.brushThreshold = brushThreshold;
+  }
+
+  return toolGroup;
+}
+
+/**
+ * Set a segmentation tool active
+ * @param toolGroupId The ID of the tool group
+ * @param segmentationToolName The name of the segmentation tool to activate (brush, circleScissor, rectangleScissor, sphereScissor)
+ * @param options Additional options 
+ */
+export function setSegmentationToolActive(
+  toolGroupId: string,
+  segmentationToolName: 'brush' | 'circleScissor' | 'rectangleScissor' | 'sphereScissor',
+  options: { mouseButton?: number } = {}
+): void {
+  // Get the corresponding Cornerstone tool name
+  const toolName = mapUiToolToCornerstone3DSegmentation(segmentationToolName);
+  
+  // Set the tool active with the specified mouse button binding
+  setToolActive(toolGroupId, toolName, options);
+}
+
+/**
+ * Maps UI segmentation tool names to Cornerstone3D segmentation tool names
+ * @param tool The UI segmentation tool name
+ * @returns The corresponding Cornerstone3D segmentation tool name
+ */
+function mapUiToolToCornerstone3DSegmentation(
+  tool: 'brush' | 'circleScissor' | 'rectangleScissor' | 'sphereScissor'
+): string {
+  switch (tool) {
+    case 'brush':
+      return BrushTool.toolName;
+    case 'circleScissor':
+      return CircleScissorsTool.toolName;
+    case 'rectangleScissor':
+      return RectangleScissorsTool.toolName;
+    case 'sphereScissor':
+      return SphereScissorsTool.toolName;
+    default:
+      console.warn(`Unknown segmentation tool: ${tool} - defaulting to Brush`);
+      return BrushTool.toolName;
   }
 } 

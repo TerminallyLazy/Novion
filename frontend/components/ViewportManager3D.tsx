@@ -7,6 +7,7 @@ import { Layers, Maximize, Minimize, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { UiToolType } from '@/lib/utils/cornerstone3DInit';
+import { ImageToolController } from './ImageToolController';
 
 // Component to show when viewer has error
 function ViewerFallback() {
@@ -61,6 +62,8 @@ export function ViewportManager3D({
   const [hasError, setHasError] = useState(false);
   const [is2D, setIs2D] = useState(false);
   const [use3DViewer, setUse3DViewer] = useState(true);
+  const [toolGroupId, setToolGroupId] = useState<string>(`toolGroup-${Math.random().toString(36).substring(2, 11)}`);
+  const [currentTool, setCurrentTool] = useState<UiToolType>(activeTool);
   
   // Determine which image IDs to use
   const allImageIds = imageIds.length > 0 ? imageIds : imageId ? [imageId] : [];
@@ -82,7 +85,7 @@ export function ViewportManager3D({
   const showNonAxialWarning = is2D && activeViewport !== 'AXIAL';
   
   // Handle image load completion
-  const handleImageLoaded = (success: boolean, is2DImage: boolean) => {
+  const handleImageLoaded = (success: boolean, is2DImage: boolean = false) => {
     setHasError(!success);
     setIs2D(is2DImage);
     
@@ -129,132 +132,155 @@ export function ViewportManager3D({
     return 'col-span-1 row-span-1';
   };
   
+  const handleToolChangeInternal = (tool: UiToolType) => {
+    setCurrentTool(tool);
+    
+    if (onToolChange) {
+      onToolChange(tool);
+    }
+  };
+  
   return (
-    <div className={cn("relative flex flex-col w-full h-full rounded-md overflow-hidden border", className)}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-gray-900 text-white">
-        <div className="flex items-center space-x-2">
-          <Layers className="h-4 w-4" />
-          <span className="text-sm font-medium">
-            {expandedViewport ? `${expandedViewport} View` : '3D Viewer'}
-          </span>
+    <div className={cn("viewport-manager grid grid-cols-1 md:grid-cols-3 gap-4", className)}>
+      {/* Main Content - Viewports */}
+      <div className={cn(
+        "md:col-span-2 grid", 
+        (use3DViewer && !is2D) ? "grid-cols-2 grid-rows-2 gap-2" : "grid-cols-1 grid-rows-1"
+      )}>
+        {/* AXIAL Viewport */}
+        <div 
+          className={getViewportClasses('AXIAL')}
+          onClick={() => handleViewportActivate('AXIAL')}
+        >
+          {isViewportVisible('AXIAL') && (
+            <>
+              <div className="absolute top-2 left-2 z-10 text-xs font-semibold text-white bg-black/50 px-2 py-1 rounded">
+                AXIAL
+              </div>
+              
+              {/* Toggle expand/collapse button */}
+              <button 
+                className="absolute top-2 right-2 z-10 p-1 text-white bg-black/50 rounded-full hover:bg-black/70 transition-colors"
+                onClick={(e) => handleToggleExpand('AXIAL')}
+              >
+                {expandedViewport === 'AXIAL' ? <Minimize size={16} /> : <Maximize size={16} />}
+              </button>
+              
+              <DicomViewer3D 
+                imageIds={allImageIds}
+                viewportType="AXIAL"
+                isActive={activeViewport === 'AXIAL'}
+                isExpanded={expandedViewport === 'AXIAL'}
+                onActivate={() => handleViewportActivate('AXIAL')}
+                onToggleExpand={() => handleToggleExpand('AXIAL')}
+                onImageLoaded={(success, is2d) => handleImageLoaded(success, is2d)}
+                activeTool={currentTool}
+              />
+            </>
+          )}
         </div>
         
-        <div className="flex items-center space-x-2">
-          {showTools && (
-            <div className="flex items-center">
-              <Toggle 
-                checked={use3DViewer}
-                onCheckedChange={setUse3DViewer}
-                aria-label="Toggle 3D view"
-                disabled={isDisabled}
-              >
-                <span className="text-xs mr-1">3D</span>
-              </Toggle>
-            </div>
-          )}
-          
-          {expandedViewport && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setExpandedViewport(null)}
-              className="p-1 h-7"
-            >
-              <Minimize className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
-      
-      {/* ViewportContainer */}
-      <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-1 p-1 bg-gray-800">
-        {hasError ? (
-          <ViewerFallback />
-        ) : (
-          <>
-            {/* Axial Viewport */}
-            {isViewportVisible('AXIAL') && (
-              <div className={getViewportClasses('AXIAL')}>
-                <DicomViewer3D
-                  imageId={imageId}
-                  imageIds={imageIds}
-                  viewportType="AXIAL"
-                  isActive={activeViewport === 'AXIAL'}
-                  isExpanded={expandedViewport === 'AXIAL'}
-                  onActivate={() => handleViewportActivate('AXIAL')}
-                  onToggleExpand={() => handleToggleExpand('AXIAL')}
-                  onImageLoaded={(success) => handleImageLoaded(success, false)}
-                  activeTool={activeTool}
-                />
-              </div>
+        {/* Sagittal Viewport */}
+        {isViewportVisible('SAGITTAL') && (
+          <div className={getViewportClasses('SAGITTAL')}>
+            <DicomViewer3D
+              imageId={imageId}
+              imageIds={imageIds}
+              viewportType="SAGITTAL"
+              isActive={activeViewport === 'SAGITTAL'}
+              isExpanded={expandedViewport === 'SAGITTAL'}
+              onActivate={() => handleViewportActivate('SAGITTAL')}
+              onToggleExpand={() => handleToggleExpand('SAGITTAL')}
+              onImageLoaded={(success) => handleImageLoaded(success, false)}
+              activeTool={currentTool}
+              suppressErrors={is2D}
+            />
+            {showNonAxialWarning && activeViewport === 'SAGITTAL' && (
+              <TwoDimensionalImageMessage />
             )}
-            
-            {/* Sagittal Viewport */}
-            {isViewportVisible('SAGITTAL') && (
-              <div className={getViewportClasses('SAGITTAL')}>
-                <DicomViewer3D
-                  imageId={imageId}
-                  imageIds={imageIds}
-                  viewportType="SAGITTAL"
-                  isActive={activeViewport === 'SAGITTAL'}
-                  isExpanded={expandedViewport === 'SAGITTAL'}
-                  onActivate={() => handleViewportActivate('SAGITTAL')}
-                  onToggleExpand={() => handleToggleExpand('SAGITTAL')}
-                  onImageLoaded={(success) => handleImageLoaded(success, false)}
-                  activeTool={activeTool}
-                  suppressErrors={is2D}
-                />
-                {showNonAxialWarning && activeViewport === 'SAGITTAL' && (
-                  <TwoDimensionalImageMessage />
-                )}
-              </div>
+          </div>
+        )}
+        
+        {/* Coronal Viewport */}
+        {isViewportVisible('CORONAL') && (
+          <div className={getViewportClasses('CORONAL')}>
+            <DicomViewer3D
+              imageId={imageId}
+              imageIds={imageIds}
+              viewportType="CORONAL"
+              isActive={activeViewport === 'CORONAL'}
+              isExpanded={expandedViewport === 'CORONAL'}
+              onActivate={() => handleViewportActivate('CORONAL')}
+              onToggleExpand={() => handleToggleExpand('CORONAL')}
+              onImageLoaded={(success) => handleImageLoaded(success, false)}
+              activeTool={currentTool}
+              suppressErrors={is2D}
+            />
+            {showNonAxialWarning && activeViewport === 'CORONAL' && (
+              <TwoDimensionalImageMessage />
             )}
-            
-            {/* Coronal Viewport */}
-            {isViewportVisible('CORONAL') && (
-              <div className={getViewportClasses('CORONAL')}>
-                <DicomViewer3D
-                  imageId={imageId}
-                  imageIds={imageIds}
-                  viewportType="CORONAL"
-                  isActive={activeViewport === 'CORONAL'}
-                  isExpanded={expandedViewport === 'CORONAL'}
-                  onActivate={() => handleViewportActivate('CORONAL')}
-                  onToggleExpand={() => handleToggleExpand('CORONAL')}
-                  onImageLoaded={(success) => handleImageLoaded(success, false)}
-                  activeTool={activeTool}
-                  suppressErrors={is2D}
-                />
-                {showNonAxialWarning && activeViewport === 'CORONAL' && (
-                  <TwoDimensionalImageMessage />
-                )}
-              </div>
+          </div>
+        )}
+        
+        {/* 3D Viewport */}
+        {isViewportVisible('3D') && use3DViewer && (
+          <div className={getViewportClasses('3D')}>
+            <DicomViewer3D
+              imageId={imageId}
+              imageIds={imageIds}
+              viewportType="3D"
+              isActive={activeViewport === '3D'}
+              isExpanded={expandedViewport === '3D'}
+              onActivate={() => handleViewportActivate('3D')}
+              onToggleExpand={() => handleToggleExpand('3D')}
+              onImageLoaded={(success) => handleImageLoaded(success, false)}
+              activeTool={currentTool}
+              suppressErrors={is2D}
+            />
+            {is2D && (
+              <TwoDimensionalImageMessage />
             )}
-            
-            {/* 3D Viewport */}
-            {isViewportVisible('3D') && use3DViewer && (
-              <div className={getViewportClasses('3D')}>
-                <DicomViewer3D
-                  imageId={imageId}
-                  imageIds={imageIds}
-                  viewportType="3D"
-                  isActive={activeViewport === '3D'}
-                  isExpanded={expandedViewport === '3D'}
-                  onActivate={() => handleViewportActivate('3D')}
-                  onToggleExpand={() => handleToggleExpand('3D')}
-                  onImageLoaded={(success) => handleImageLoaded(success, false)}
-                  activeTool={activeTool}
-                  suppressErrors={is2D}
-                />
-                {is2D && (
-                  <TwoDimensionalImageMessage />
-                )}
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
+      
+      {/* Sidebar - Tools */}
+      {showTools && (
+        <div className="tool-sidebar flex flex-col gap-4">
+          <div className="viewport-controls bg-card border rounded-md p-4">
+            <h3 className="text-sm font-semibold mb-4">Viewport Controls</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "mb-2 w-full justify-start",
+                use3DViewer && !is2D ? "bg-primary/20" : ""
+              )}
+              onClick={toggle3DViewer}
+              disabled={is2D}
+            >
+              <Layers className="mr-2 h-4 w-4" />
+              3D Multi-planar Reconstruction
+            </Button>
+          </div>
+          
+          {/* New Tool Controller */}
+          <ImageToolController 
+            toolGroupId={toolGroupId}
+            onToolChange={handleToolChangeInternal}
+          />
+        </div>
+      )}
+      
+      {/* Error State */}
+      {hasError && (
+        <div className="col-span-3 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <p>There was an error loading the image(s).</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

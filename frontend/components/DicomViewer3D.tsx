@@ -29,7 +29,7 @@ interface DicomViewer3DProps {
   isExpanded?: boolean;
   onActivate?: () => void;
   onToggleExpand?: () => void;
-  onImageLoaded?: (success: boolean) => void;
+  onImageLoaded?: (success: boolean, is2DImage: boolean) => void;
   activeTool?: Tool;
   suppressErrors?: boolean;
 }
@@ -110,7 +110,7 @@ export function DicomViewer3D({
         console.error('Error initializing Cornerstone3D:', error);
         setError('Failed to initialize Cornerstone3D');
         if (onImageLoaded) {
-          onImageLoaded(false);
+          onImageLoaded(false, false);
         }
       }
     };
@@ -170,7 +170,7 @@ export function DicomViewer3D({
     if (suppressErrors) {
       console.log('DicomViewer3D: Skipping initialization for suppressed view');
       if (onImageLoaded) {
-        onImageLoaded(false);
+        onImageLoaded(false, false);
       }
       return;
     }
@@ -304,8 +304,11 @@ export function DicomViewer3D({
         setIsEnabled(true);
         setLoading(false);
         
+        // Check if this is a 2D image
+        const is2DImageResult = is2DImage(imageIds[0]);
+        
         if (onImageLoaded) {
-          onImageLoaded(true);
+          onImageLoaded(true, is2DImageResult);
         }
       } catch (error) {
         console.error('DicomViewer3D: Error setting up viewport:', error);
@@ -313,7 +316,7 @@ export function DicomViewer3D({
         setLoading(false);
         
         if (onImageLoaded) {
-          onImageLoaded(false);
+          onImageLoaded(false, false);
         }
       }
     };
