@@ -10,3 +10,16 @@ tmp/
 
 
 __pycache__/
+
+*.pkl
+*.pckl
+
+*.wav
+*.mp3
+
+.env*
+
+*.log
+
+*.log.*
+

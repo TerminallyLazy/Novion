@@ -1334,6 +1334,7 @@ function App() {
   const [expandedViewport, setExpandedViewport] = useState<ViewportType | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>(null);
   const [isNovionModalOpen, setIsNovionModalOpen] = useState(false);
+  const [showExternalViewer, setShowExternalViewer] = useState(false);
 
   const DEFAULT_PANEL_WIDTH = 320;
   const COLLAPSED_PANEL_WIDTH = 48;
@@ -1414,16 +1415,26 @@ function App() {
       >
         <div className="h-full flex flex-col overflow-hidden">
           <div className="flex-grow flex flex-col">
-            <ViewportGrid
-              layout={layout as ViewportLayout}
-              activeViewport={activeViewport as ViewportType}
-              expandedViewport={expandedViewport}
-              onViewportChange={setActiveViewport}
-              onViewportExpand={handleViewportExpand}
-              loadedImages={loadedImages}
-              currentImageIndex={currentImageIndex}
-              activeTool={activeTool}
-            />
+            {showExternalViewer ? (
+              <div className="relative w-full h-full">
+                <iframe 
+                  src="https://webnamics.github.io/u-dicom-viewer/" 
+                  className="w-full h-full border-none"
+                  title="U-DICOM Viewer"
+                />
+              </div>
+            ) : (
+              <ViewportGrid
+                layout={layout as ViewportLayout}
+                activeViewport={activeViewport as ViewportType}
+                expandedViewport={expandedViewport}
+                onViewportChange={setActiveViewport}
+                onViewportExpand={handleViewportExpand}
+                loadedImages={loadedImages}
+                currentImageIndex={currentImageIndex}
+                activeTool={activeTool}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1501,6 +1512,29 @@ function App() {
         <Network className={`h-5 w-5 ${theme === 'dark' ? 'text-[#4cedff]' : 'text-[#0087a3]'}`} />
         <span>Novion Agents</span>
       </button>
+
+      {/* Single viewer toggle button */}
+      {/* <button
+        onClick={() => setShowExternalViewer(!showExternalViewer)}
+        className={`fixed bottom-10 right-40 transform translate-x-1/2 z-50 
+                  flex items-center gap-2 px-4 py-2 rounded-full
+                  ${theme === 'dark' 
+                    ? 'bg-[#0c1526] text-[#4cedff] border border-[#4cedff]/70 shadow-sm hover:shadow-md hover:border-[#4cedff]' 
+                    : 'bg-white text-[#0087a3] border border-[#0087a3]/60 shadow-sm hover:shadow-md hover:border-[#0087a3]'}
+                  transition-all duration-200 hover:scale-102`}
+      >
+        {showExternalViewer ? (
+          <>
+            <X className={`h-5 w-5 ${theme === 'dark' ? 'text-[#4cedff]' : 'text-[#0087a3]'}`} />
+            <span>Return to RadSysX</span>
+          </>
+        ) : (
+          <>
+            <Clapperboard className={`h-5 w-5 ${theme === 'dark' ? 'text-[#4cedff]' : 'text-[#0087a3]'}`} />
+          <span>U-DICOM</span> 
+          </>
+        )}
+      </button> */}
 
       {/* Novion Agents Modal */}
       <NovionAgentsModal 
