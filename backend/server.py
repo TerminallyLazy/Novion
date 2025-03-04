@@ -4,9 +4,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from novion import process_query  # Import the function
+from novion import process_query  # Import the functio
+from dotenv import load_dotenv
 
 app = FastAPI(title="Medical Research Assistant API")
+
+load_dotenv(dotenv_path=".env.local")
 
 # ✅ Enable CORS (Allow frontend to call API)
 app.add_middleware(
