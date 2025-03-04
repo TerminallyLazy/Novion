@@ -2,8 +2,26 @@ import requests
 from bs4 import BeautifulSoup
 from pprint import pprint
 from langchain.tools import tool
+from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
-@tool("Search_PubMed_and_return_PMIDs")
+load_dotenv(dotenv_path=".env.local")
+
+class Methods(BaseModel):
+    method: str
+    description: str
+
+class ResearchPaper(BaseModel):
+    title: str = Field(..., description="Title of the research paper")
+    authors: list[str] = Field(..., description="Authors of the research paper")
+    abstract: str = Field(..., description="Abstract of the research paper")
+    introduction: str = Field(..., description="Introduction of the research paper")
+    methods: list[Methods] = Field(..., description="A list of the methods used in the research paper")
+    results: str = Field(..., description="Results of the research paper")
+    discussion: str = Field(..., description="Discussion of the research paper")
+    paper_url: str = Field(..., description="URL of the research paper")
+
 def search_pubmed(query, retmax=10):
     """
     Description: Search PubMed for the given query and return a list of PMIDs.
@@ -22,7 +40,6 @@ def search_pubmed(query, retmax=10):
     data = response.json()
     return data["esearchresult"]["idlist"]
 
-@tool("Retrieve_details_for_PMIDs_with_ESummary")
 def fetch_pubmed_details(query, retmax=10):
     """
     Description: Retrieve details for a list of PMIDs using the ESummary endpoint.
@@ -60,7 +77,6 @@ def fetch_pubmed_details(query, retmax=10):
 
     return summary_data
 
-@tool("Return_pubmed_identifiers")
 def get_pubmed_identifiers(url):
     """
      Description: Returns pubmed identifier
@@ -102,7 +118,6 @@ def get_pubmed_identifiers(url):
             f"Error retrieving the page: HTTP {response.status_code}")
 
 
-@tool("Return_pmc_link")
 def get_pmc_link(url):
     """
     Description: Returns the pmc link
@@ -115,7 +130,6 @@ def get_pmc_link(url):
     else:
         return None
 
-@tool("Return_article_text")
 def retrieve_article_text(pmc_url):
     """
     Description: retrieves article text
@@ -125,6 +139,11 @@ def retrieve_article_text(pmc_url):
     response = requests.get(pmc_url, headers=headers)
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract the first h1 tag which is always the title
+        title_tag = soup.find('h1')
+        title_text = title_tag.get_text(strip=True) if title_tag else "No title available"
+        
         h2_tags = soup.find_all(['h2', 'h3'])
         h2_h3_p_texts = []
         exclude_texts = ["Supplementary material", "Acknowledgments",
@@ -142,38 +161,48 @@ def retrieve_article_text(pmc_url):
             if p_tags:
                 h2_h3_p_texts.append(
                     {'tag': tag.name, 'text': tag_text, 'p_tags': p_tags})
-        return h2_h3_p_texts
+        
+        return {"title": title_text, "sections": h2_h3_p_texts}
     else:
         raise Exception(
             f"Error retrieving the page: HTTP {response.status_code}")
 
+model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+structured_llm = model.with_structured_output(ResearchPaper)
 
-#url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
-# pmc_link = get_pmc_link(url)
-# if pmc_link:
-#     h2_h3_p_texts = retrieve_article_text(pmc_link)
-#     pprint(h2_h3_p_texts)
-# else:
-#     print("PMCID not found")
+@tool("Retrieve_research_papers_from_PubMed_based_on_query")
+def research_retriever(query):
+    """
+    Description: Retrieve research papers from PubMed based on the given query. The function returns every paper's
+    title, authors, abstract, introduction, methods, results, discussion, and the URL of the paper.
+
+    - Input: Query (str)
+    - Output: List of research papers (list)
+    """
+    print(f"Got query: {query}")
+    paper_ids = search_pubmed(query)
+    print(f"Found paper IDs: {paper_ids}")
+    papers = []
+    for paper_id in paper_ids:
+        url = f"https://pubmed.ncbi.nlm.nih.gov/{paper_id}/"
+        print(f"Processing paper ID: {paper_id} with URL: {url}")
+        pmc_link = get_pmc_link(url)
+        if pmc_link:
+            print(f"Found PMC link: {pmc_link}")
+            article_text = retrieve_article_text(pmc_link)
+            print(f"Retrieved article text for PMC link: {pmc_link}")
+            papers.append({"paper_id": paper_id, "pmc_link": pmc_link, "article_text": article_text})
+            for paper in papers:
+                print(f"Invoking structured LLM for paper ID: {paper['paper_id']}")
+                response = structured_llm.invoke(str(paper))
+    print("Completed processing all papers.")
+    return response
 
 
-# # Example query to search PubMed
-# query = "COVID-19"
-
-# # Search PubMed and fetch details
-# pubmed_details = fetch_pubmed_details(query)
-# pprint(pubmed_details)
-
-# # Example PubMed article URL
-# url = "https://pubmed.ncbi.nlm.nih.gov/36462630/"
-
-# # Get PMC link from PubMed URL
-# pmc_link = get_pmc_link(url)
-# print(f"PMC Link: {pmc_link}")
-
-# # Retrieve article text from PMC link
-# if pmc_link:
-#     article_text = retrieve_article_text(pmc_link)
-#     pprint(article_text)
-# else:
-#     print("PMCID not found")
+#if __name__ == "__main__":
+    # Example usage of search_pubmed
+    # query = "cancer"
+   
+    # Example usage of retrieve_article_text
+    # papers = research_retriever(query)
+    # print(papers)

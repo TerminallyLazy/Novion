@@ -11,7 +11,7 @@ from langgraph.prebuilt import create_react_agent
 
 from tools.medications import get_drug_use_cases, search_drugs_for_condition
 from tools.medical_info import search_wikem
-from tools.researcher import search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text
+from tools.researcher import research_retriever
 
 from IPython.display import display, Image
 
@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 import re
 
-load_dotenv(dotenv_path="../.env.local")
+load_dotenv(dotenv_path=".env.local")
 
 members = ["pharmacist", "researcher", "medical_analyst"]
 # Our team supervisor is an LLM node. It just picks the next agent to process
@@ -84,7 +84,7 @@ def pharmacist_node(state: State) -> Command[Literal["supervisor"]]:
     )
 
 researcher_agent = create_react_agent(
-    llm, tools=[search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text]
+    llm, tools=[research_retriever]
 )
 
 medical_analyst_agent = create_react_agent(llm, tools=[search_wikem])
