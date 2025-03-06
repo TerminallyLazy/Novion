@@ -1,13 +1,22 @@
-from typing import Literal, AsyncGenerator
+from typing import Literal, AsyncGenerator, List, Optional, Dict, Any, Union, TypeVar, Generic
 from typing_extensions import TypedDict
+from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
-from langgraph.graph import MessagesState, END
-from langgraph.types import Command
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
+from langchain.agents import Tool
+
+# Define our own Command class since langgraph.types is not available
+T = TypeVar('T')
+
+@dataclass
+class Command(Generic[T]):
+    """A command to update state and go to a node."""
+    goto: T
+    update: Dict[str, Any] = None
 
 from tools.medications import get_drug_use_cases, search_drugs_for_condition
 from tools.medical_info import search_wikem
@@ -18,10 +27,20 @@ from IPython.display import display, Image
 from dotenv import load_dotenv
 import json
 import asyncio
-
+import os
 import re
 
+# Import MCP integration components
+from mcp.agent_integration import enhance_agent_with_mcp, MCPToolkit
+
 load_dotenv(dotenv_path="../.env.local")
+
+# Set up MCP-related environment variables if not already set
+if not os.getenv("FHIR_BASE_URL"):
+    os.environ["FHIR_BASE_URL"] = os.getenv("FHIR_BASE_URL", "https://hapi.fhir.org/baseR4")
+    
+if not os.getenv("FHIR_ACCESS_TOKEN"):
+    os.environ["FHIR_ACCESS_TOKEN"] = os.getenv("FHIR_ACCESS_TOKEN", "")
 
 members = ["pharmacist", "researcher", "medical_analyst"]
 # Our team supervisor is an LLM node. It just picks the next agent to process
@@ -45,8 +64,14 @@ class Router(TypedDict):
 
 llm = ChatOpenAI(model="gpt-4o-mini")
 
+# Create MCP toolkit for use with agents
+mcp_toolkit = MCPToolkit()
+mcp_tools = mcp_toolkit.get_tools()
 
-class State(MessagesState):
+
+class State(TypedDict):
+    """State for the graph."""
+    messages: List[BaseMessage]
     next: str
 
 
@@ -68,45 +93,161 @@ def supervisor_node(state: State) -> Command[Literal["pharmacist", "researcher",
     return Command(goto=goto, update={"next": goto})
 
 
-pharamcist_agent = create_react_agent(
-    llm, tools=[get_drug_use_cases, search_drugs_for_condition]
+# Define system prompts with chain-of-thought instructions for each agent
+pharmacist_system_prompt = """
+You are a pharmacist agent that helps find information about medications, their uses, and appropriate treatments.
+
+Before providing your final answer, you MUST include your detailed reasoning process enclosed in <think></think> tags.
+This reasoning should include:
+- Your analysis of the medication request
+- Potential drug interactions or contraindications you've considered
+- Why you've selected certain medications over others
+- Any other relevant pharmacological considerations
+
+After your <think></think> section, provide your clear, concise final recommendation.
+"""
+
+# Create the base pharmacist agent
+pharmacist_base_agent = create_react_agent(
+    llm, 
+    tools=[get_drug_use_cases, search_drugs_for_condition],
+    prompt=pharmacist_system_prompt
+)
+
+# Enhance with MCP tools (particularly useful for medication data)
+pharmacist_agent = enhance_agent_with_mcp(
+    pharamcist_base_agent,
+    include_tools=["get_medication_list", "search_fhir_resources"]
 )
 
 
 def pharmacist_node(state: State) -> Command[Literal["supervisor"]]:
-    result = pharamcist_agent.invoke(state)
+    # Make a copy of the state to avoid modifying the original
+    pharmacist_state = state.copy()
+    
+    # Add a directive to ensure chain-of-thought reasoning if not already present in the system message
+    cot_directive = HumanMessage(
+        content="Remember to include your detailed reasoning process within <think></think> tags before providing your final answer.",
+        name="directive"
+    )
+    
+    # Append the directive to messages
+    if "messages" in pharmacist_state:
+        pharmacist_state["messages"] = pharmacist_state["messages"] + [cot_directive]
+    
+    # Invoke the agent with the modified state
+    result = pharamcist_agent.invoke(pharmacist_state)
+    
+    # Extract the result and ensure it contains the thinking process
+    content = result["messages"][-1].content
+    
     return Command(
         update={
             "messages": [
-                HumanMessage(content=result["messages"]
-                             [-1].content, name="pharmacist")
+                HumanMessage(content=content, name="pharmacist")
             ]
         },
         goto="supervisor",
     )
 
-researcher_agent = create_react_agent(
-    llm, tools=[search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text]
+researcher_system_prompt = """
+You are a medical researcher agent that helps find and analyze scientific literature and research papers.
+
+Before providing your final answer, you MUST include your detailed reasoning process enclosed in <think></think> tags.
+This reasoning should include:
+- Your search strategy and why you chose specific search terms
+- How you evaluated the quality and relevance of the research
+- Your process for synthesizing information from multiple sources
+- Any limitations or gaps in the research you identified
+
+After your <think></think> section, provide your clear, evidence-based conclusion with proper citations.
+"""
+
+# Create the base researcher agent
+researcher_base_agent = create_react_agent(
+    llm, 
+    tools=[search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text],
+    prompt=researcher_system_prompt
 )
 
-medical_analyst_agent = create_react_agent(llm, tools=[search_wikem])
+# Enhance with MCP tools relevant to research
+researcher_agent = enhance_agent_with_mcp(
+    researcher_base_agent,
+    include_tools=["list_fhir_resources", "search_fhir_resources"]
+)
+
+medical_analyst_system_prompt = """
+You are a medical analyst agent that helps analyze medical conditions, diagnoses, and treatment options.
+
+Before providing your final answer, you MUST include your detailed reasoning process enclosed in <think></think> tags.
+This reasoning should include:
+- Your differential diagnosis process
+- How you ruled out alternative conditions
+- Your analysis of symptoms and clinical presentation
+- How you determined the most appropriate treatment approach
+
+After your <think></think> section, provide your clear clinical assessment and recommendations.
+"""
+
+# Create the base medical analyst agent
+medical_analyst_base_agent = create_react_agent(
+    llm, 
+    tools=[search_wikem],
+    prompt=medical_analyst_system_prompt
+)
+
+# Enhance with all MCP tools for full data access
+medical_analyst_agent = enhance_agent_with_mcp(
+    medical_analyst_base_agent
+)
 
 
 def medical_analyst_node(state: State) -> Command[Literal["supervisor"]]:
-    result = medical_analyst_agent.invoke(state)
+    # Make a copy of the state to avoid modifying the original
+    analyst_state = state.copy()
+    
+    # Add a directive to ensure chain-of-thought reasoning if not already present in the system message
+    cot_directive = HumanMessage(
+        content="Remember to include your detailed reasoning process within <think></think> tags before providing your final answer.",
+        name="directive"
+    )
+    
+    # Append the directive to messages
+    if "messages" in analyst_state:
+        analyst_state["messages"] = analyst_state["messages"] + [cot_directive]
+    
+    # Invoke the agent with the modified state
+    result = medical_analyst_agent.invoke(analyst_state)
+    
+    # Extract the result
+    content = result["messages"][-1].content
+    
     return Command(
         update={
             "messages": [
-                HumanMessage(content=result["messages"]
-                             [-1].content, name="medical_analyst")
-                ]
-            },
-            goto="supervisor",
+                HumanMessage(content=content, name="medical_analyst")
+            ]
+        },
+        goto="supervisor",
     )
 
 def researcher_node(state: State) -> Command[Literal["supervisor"]]:
     try:
-        result = researcher_agent.invoke(state)
+        # Make a copy of the state to avoid modifying the original
+        researcher_state = state.copy()
+        
+        # Add a directive to ensure chain-of-thought reasoning if not already present in the system message
+        cot_directive = HumanMessage(
+            content="Remember to include your detailed reasoning process within <think></think> tags before providing your final answer.",
+            name="directive"
+        )
+        
+        # Append the directive to messages
+        if "messages" in researcher_state:
+            researcher_state["messages"] = researcher_state["messages"] + [cot_directive]
+            
+        # Invoke the agent with the modified state
+        result = researcher_agent.invoke(researcher_state)
         
         # Get the content from the result
         content = result["messages"][-1].content
@@ -154,6 +295,39 @@ builder.add_node("pharmacist", pharmacist_node)
 builder.add_node("medical_analyst", medical_analyst_node)
 builder.add_node("researcher", researcher_node)
 graph = builder.compile()
+
+def enable_disable_mcp(enabled: bool = True):
+    """Enable or disable MCP integration for all agents.
+    
+    Args:
+        enabled: If True, MCP tools will be enabled. If False, they will be disabled.
+        
+    Returns:
+        A message indicating the current state of MCP integration.
+    """
+    global pharamcist_agent, researcher_agent, medical_analyst_agent
+    global pharamcist_base_agent, researcher_base_agent, medical_analyst_base_agent
+    
+    if enabled:
+        # Re-enable MCP for all agents
+        pharmacist_agent = enhance_agent_with_mcp(
+            pharamcist_base_agent,
+            include_tools=["get_medication_list", "search_fhir_resources"]
+        )
+        researcher_agent = enhance_agent_with_mcp(
+            researcher_base_agent,
+            include_tools=["list_fhir_resources", "search_fhir_resources"]
+        )
+        medical_analyst_agent = enhance_agent_with_mcp(
+            medical_analyst_base_agent
+        )
+        return "MCP integration enabled for all agents."
+    else:
+        # Disable MCP by reverting to base agents
+        pharamcist_agent = pharamcist_base_agent
+        researcher_agent = researcher_base_agent
+        medical_analyst_agent = medical_analyst_base_agent
+        return "MCP integration disabled for all agents."
 
 def process_query(query: str):
     """Process user query using the compiled graph and extract HumanMessage content."""

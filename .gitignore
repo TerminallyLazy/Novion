@@ -23,3 +23,24 @@ __pycache__/
 
 *.log.*
 
+/mcp_docs/
+
+/mcp_docs/*
+
+/mcp_docs/*/*
+
+/backend/mcp_docs/
+
+/backend/mcp_docs/*
+
+/backend/mcp_docs/*/*
+
+patient_dka.json
+patient_pneu.json
+
+/frontend/chat_ui.html
+
+/frontend/chat_ui.js
+
+/frontend/chat_ui.css
+
