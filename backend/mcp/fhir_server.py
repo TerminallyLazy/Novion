@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FHIR MCP Server Implementation for RadSysX
+FHIR MCP Server Implementation for Novion
 
 This module implements an MCP server that provides access to FHIR resources.
 Based on the TypeScript implementation at https://github.com/flexpa/mcp-fhir
@@ -89,7 +89,7 @@ class FHIRServer:
             raise ValueError("FHIR_BASE_URL environment variable must be set")
             
         self.server_info = ServerInfo(
-            name="radsysx-mcp-fhir",
+            name="Novion-mcp-fhir",
             version="0.1.0"
         )
         
@@ -607,11 +607,11 @@ async def stdio_transport_main():
 
 class FHIRMCPServer:
     """
-    MCP Server implementation for FHIR resources that's used by RadSysX.
+    MCP Server implementation for FHIR resources that's used by Novion.
     
     This class provides a simplified interface to the FHIR server implementation
-    for use within RadSysX, focusing on the core functionality needed by the
-    RadSysX agents.
+    for use within Novion, focusing on the core functionality needed by the
+    Novion agents.
     """
     
     def __init__(self, fhir_base_url=None, access_token=None):

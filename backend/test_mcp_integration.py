@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Test script for MCP integration in RadSysX.
+Test script for MCP integration in Novion.
 
 This script provides a simple way to test the MCP FHIR server and client integration
-with the RadSysX framework's agents.
+with the Novion framework's agents.
 """
 
 import argparse
@@ -25,7 +25,7 @@ logger = logging.getLogger("mcp_test")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Direct imports from the modules
-from mcp.client import RadSysXMCPClient
+from mcp.client import NovionMCPClient
 from mcp.fhir_server import FHIRMCPServer
 
 # Skip novion import for now due to compatibility issues
@@ -34,7 +34,7 @@ from mcp.fhir_server import FHIRMCPServer
 # Create a get_client function to match our original API
 def get_client():
     """Get the default MCP client."""
-    return RadSysXMCPClient()
+    return NovionMCPClient()
 
 
 async def test_mcp_server():
@@ -130,7 +130,7 @@ async def test_agent_integration(query: str = "What are common medications for h
 
 async def main():
     """Main function to run the integration tests."""
-    parser = argparse.ArgumentParser(description="Test MCP integration in RadSysX")
+    parser = argparse.ArgumentParser(description="Test MCP integration in Novion")
     parser.add_argument(
         "--mode", 
         choices=["server", "client", "agent", "all"], 

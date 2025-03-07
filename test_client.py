@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Simple test client for the RadSysX chat interface.
+Simple test client for the Novion chat interface.
 """
 
 import requests

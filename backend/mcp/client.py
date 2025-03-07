@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-MCP Client for RadSysX
+MCP Client for Novion
 
 This module provides a client for interacting with Model Context Protocol servers,
-with a focus on integrating with the RadSysX framework.
+with a focus on integrating with the Novion framework.
 """
 
 import json
@@ -31,7 +31,7 @@ class CallToolResponse(BaseModel):
 _default_client = None
 _default_server = None
 
-def get_client() -> "RadSysXMCPClient":
+def get_client() -> "NovionMCPClient":
     """Get the default MCP client.
     
     Returns:
@@ -41,7 +41,7 @@ def get_client() -> "RadSysXMCPClient":
     if _default_client is None:
         from .fhir_server import FHIRMCPServer
         server = get_server()
-        _default_client = RadSysXMCPClient()
+        _default_client = NovionMCPClient()
         # Connect to the server
         import asyncio
         try:
@@ -135,9 +135,9 @@ class ClientSession:
         self._callbacks[message_id] = callback
 
 
-class RadSysXMCPClient:
+class NovionMCPClient:
     """
-    MCP client for RadSysX integration.
+    MCP client for Novion integration.
     
     This client provides access to MCP servers, with a particular focus on
     facilitating interaction with medical data via the FHIR MCP server.

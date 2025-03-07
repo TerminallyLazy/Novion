@@ -1,5 +1,5 @@
 """
-MCP Installer integration for RadSysX.
+MCP Installer integration for Novion.
 
 This module provides functionality to install and manage additional MCP servers
 using the @anaisbetts/mcp-installer package.
@@ -63,7 +63,7 @@ class MCPInstaller:
                 config_dir = Path.home() / '.config' / 'claude'
         else:
             # Fallback to a local config
-            config_dir = Path.home() / '.radsysx' / 'mcp'
+            config_dir = Path.home() / '.Novion' / 'mcp'
         
         # Create config directory if it doesn't exist
         config_dir.mkdir(parents=True, exist_ok=True)

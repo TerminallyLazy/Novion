@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional
 
 from novion import process_query, stream_query, enable_disable_mcp  # Import functions
 from mcp.fhir_server import FHIRMCPServer
-from mcp.client import RadSysXMCPClient
+from mcp.client import NovionMCPClient
 from chat_interface import initialize_chat_interface, get_chat_interface
 
 app = FastAPI(title="Medical Research Assistant API")

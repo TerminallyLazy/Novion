@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Simple server for demonstrating the RadSysX chat interface.
+Simple server for demonstrating the Novion chat interface.
 This provides a minimal server without dependencies on external packages.
 """
 
@@ -37,7 +37,7 @@ except ImportError:
             MockTool("install_mcp_server", "Install a new MCP server", "system")
         ]
 
-app = FastAPI(title="RadSysX Chat Demo")
+app = FastAPI(title="Novion Chat Demo")
 
 # Define the path to frontend files
 frontend_dir = pathlib.Path(__file__).parent / "frontend"
@@ -85,7 +85,7 @@ async def mock_stream_chat(message):
     
     # Detect if this is a help request
     if message.strip() in ["/help", "/tools", "/?" , "/?"]:  
-        help_text = "RadSysX Chat Interface Help\n\n"
+        help_text = "Novion Chat Interface Help\n\n"
         
         help_text += "## DIRECT MCP ACCESS\n"
         help_text += "Access MCP tools directly with:\n"
@@ -349,7 +349,7 @@ async def mock_stream_chat(message):
         return
     
     # Default response for regular messages
-    welcome_msg = "Welcome to RadSysX Chat! I'm here to help with your medical research queries.\n\n"
+    welcome_msg = "Welcome to Novion Chat! I'm here to help with your medical research queries.\n\n"
     for char in welcome_msg:
         yield char
         await asyncio.sleep(0.01)

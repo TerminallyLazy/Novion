@@ -1,10 +1,10 @@
-# RadSysX MCP Integration
+# Novion MCP Integration
 
-This module provides integration between the RadSysX framework and Model Context Protocol (MCP) servers, with a specific focus on FHIR healthcare data access.
+This module provides integration between the Novion framework and Model Context Protocol (MCP) servers, with a specific focus on FHIR healthcare data access.
 
 ## Overview
 
-The MCP integration allows RadSysX's agents to access and interact with healthcare data through a standardized protocol. The implementation includes:
+The MCP integration allows Novion's agents to access and interact with healthcare data through a standardized protocol. The implementation includes:
 
 1. **FHIR MCP Server**: A server that exposes FHIR resources and operations as MCP tools
 2. **MCP Client**: A client that connects to MCP servers and provides a simple API to interact with them
@@ -90,9 +90,9 @@ enhanced_agent = enhance_agent_with_mcp(
 )
 ```
 
-### Enabling/Disabling MCP in RadSysX
+### Enabling/Disabling MCP in Novion
 
-The RadSysX framework includes a function to enable or disable MCP integration:
+The Novion framework includes a function to enable or disable MCP integration:
 
 ```python
 import novion

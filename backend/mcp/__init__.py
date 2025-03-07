@@ -1,7 +1,7 @@
 """
-MCP (Model Context Protocol) integration for RadSysX.
+MCP (Model Context Protocol) integration for Novion.
 
-This package provides integration between the RadSysX framework and
+This package provides integration between the Novion framework and
 Model Context Protocol (MCP) servers, with a particular focus on
 FHIR data access.
 """

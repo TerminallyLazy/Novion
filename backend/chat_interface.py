@@ -1,5 +1,5 @@
 """
-Chat interface module for RadSysX.
+Chat interface module for Novion.
 
 This module provides a simple interface for interacting with various 
 language models including OpenAI and Google models.

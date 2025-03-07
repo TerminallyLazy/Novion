@@ -1526,7 +1526,7 @@ function App() {
         {showExternalViewer ? (
           <>
             <X className={`h-5 w-5 ${theme === 'dark' ? 'text-[#4cedff]' : 'text-[#0087a3]'}`} />
-            <span>Return to RadSysX</span>
+            <span>Return to Novion</span>
           </>
         ) : (
           <>

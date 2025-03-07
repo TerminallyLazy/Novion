@@ -12,12 +12,12 @@ from langchain.agents import Tool
 from langchain.schema import AgentAction
 import httpx
 
-from .client import RadSysXMCPClient
+from .client import NovionMCPClient
 
 # Create a get_client function
 def get_client():
     """Get the default MCP client."""
-    return RadSysXMCPClient()
+    return NovionMCPClient()
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,12 @@ class MCPToolkit:
     resources and other MCP functionality.
     """
     
-    def __init__(self, client: Optional[RadSysXMCPClient] = None):
+    def __init__(self, client: Optional[NovionMCPClient] = None):
         """
         Initialize the MCP toolkit.
         
         Args:
-            client: An optional RadSysXMCPClient instance. If not provided,
+            client: An optional NovionMCPClient instance. If not provided,
                    the default client will be used.
         """
         self.client = client or get_client()
@@ -131,7 +131,7 @@ class MCPToolkit:
 
 def enhance_agent_with_mcp(
     agent_obj: Any, 
-    client: Optional[RadSysXMCPClient] = None,
+    client: Optional[NovionMCPClient] = None,
     include_tools: Optional[List[str]] = None
 ) -> Any:
     """
@@ -142,7 +142,7 @@ def enhance_agent_with_mcp(
     
     Args:
         agent_obj: The LangChain agent object to enhance.
-        client: An optional RadSysXMCPClient instance.
+        client: An optional NovionMCPClient instance.
         include_tools: Optional list of tool names to include. If not provided,
                       all available MCP tools will be added.
                       
