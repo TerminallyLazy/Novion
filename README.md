@@ -1,10 +1,10 @@
-# RadSysX
+# Novion
 
 A comprehensive medical research and analysis platform with specialized agent-based reasoning capabilities.
 
 ## Project Overview
 
-RadSysX is a medical research and analysis platform with a sophisticated multi-agent system using LangChain, enhanced with MCP (Model Context Protocol) tools and a flexible chat interface.
+Novion is a medical research and analysis platform with a sophisticated multi-agent system using LangChain, enhanced with MCP (Model Context Protocol) tools and a flexible chat interface.
 
 ## Key Features
 
@@ -18,7 +18,7 @@ RadSysX is a medical research and analysis platform with a sophisticated multi-a
 
 ### Specialized Medical Agents
 
-RadSysX implements a team of specialized agents with chain-of-thought reasoning:
+Novion implements a team of specialized agents with chain-of-thought reasoning:
 
 1. **Pharmacist Agent**: Expert in medication management, drug interactions, and pharmaceutical care
 2. **Researcher Agent**: Specialist in clinical trials, research methodologies, and evidence-based medicine
@@ -112,7 +112,7 @@ Extend the agents in `chat_interface.py` by adding new system messages and agent
   - `server.py`: FastAPI server with API endpoints
   - `mcp/`: MCP integration modules
     - `installer.py`: MCP server installation management
-    - `client.py`: RadSysX MCP client implementation
+    - `client.py`: Novion MCP client implementation
     - `fhir_server.py`: FHIR MCP server implementation
 - `frontend/`: User interface components
   - `chat_ui.html`: Web-based chat interface
