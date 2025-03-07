@@ -1,3 +1,5 @@
+![Novion Image](https://github.com/TerminallyLazy/Novion/blob/main/novion_v6(1).png?raw=true)
+
 # Novion
 
 A comprehensive medical research and analysis platform with specialized agent-based reasoning capabilities.
