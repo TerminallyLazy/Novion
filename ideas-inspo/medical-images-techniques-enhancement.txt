@@ -1,0 +1,565 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from transformers import ViTModel, AutoModelForCausalLM, AutoTokenizer, ResNetModel
+from torchvision import transforms
+from PIL import Image
+import SimpleITK as sitk
+import os
+import random
+import numpy as np
+from monai.networks.nets import ResNetBlock, ViT
+from monai.transforms import SpatialCrop, Resize, ToTensorD, NormalizeIntensityD, Compose, LoadImageD, EnsureChannelFirstD
+from monai.data import CacheDataset, DataLoader, Dataset
+from monai.config import print_config
+import time
+from datetime import datetime
+import json
+
+print_config()
+
+# --- 1. Advanced & Modality-Specific Image Preprocessing ---
+def preprocess_medical_image(image_path, modality):
+    medical_image = sitk.ReadImage(image_path)
+    image_array = sitk.GetArrayFromImage(medical_image)
+
+    if modality.upper() == "CT":
+        # Advanced CT-specific preprocessing
+        image_array = np.clip(image_array, -1000, 400)  # Standard Lung Window
+        image_array = (image_array - np.min(image_array)) / (np.max(image_array) - np.min(image_array)) # Normalize 0-1
+        # Noise reduction (example - Gaussian, can be replaced with more advanced filters)
+        image_array = gaussian_smoothing(image_array, sigma=1)
+
+    elif modality.upper() == "MRI":
+        # Advanced MRI-specific preprocessing (example - basic normalization)
+        image_array = (image_array - np.min(image_array)) / (np.max(image_array) - np.min(image_array))
+        # Bias field correction (optional, more complex - using N4ITK in SimpleITK)
+
+    elif modality.upper() == "X-RAY":
+        # Advanced X-Ray preprocessing (example - CLAHE)
+        image_array = (image_array - np.min(image_array)) / (np.max(image_array) - np.min(image_array))
+        image_array = adaptive_histogram_equalization(image_array) # CLAHE
+
+    elif modality.upper() == "ULTRASOUND":
+        # Advanced Ultrasound preprocessing (example - speckle reduction)
+        image_array = (image_array - np.min(image_array)) / (np.max(image_array) - np.min(image_array))
+        image_array = speckle_reducing_anisotropic_diffusion(image_array, conductance=9.0, iterations=3)
+
+    else:
+        raise ValueError("Unsupported modality")
+
+    # Assuming 3D image, take middle slice for 2D processing (for 3D CNN/ViT, remove slicing)
+    if len(image_array.shape) == 3:
+        slice_index = image_array.shape[0] // 2
+        image_slice = image_array[slice_index]
+    else:
+        image_slice = image_array
+
+    image_pil = Image.fromarray((image_slice * 255).astype('uint8'))
+
+    preprocess = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    image_tensor = preprocess(image_pil).unsqueeze(0)
+    return image_tensor
+
+# --- Advanced Preprocessing Helper Functions ---
+def gaussian_smoothing(image, sigma):
+    return sitk.GetArrayFromImage(sitk.SmoothingRecursiveGaussian(sitk.GetImageFromArray(image), sigma))
+
+def adaptive_histogram_equalization(image):
+    clahe = sitk.AdaptiveHistogramEqualizationImageFilter()
+    clahe.SetAlpha(0.8) # Contrast factor
+    clahe.SetBeta(0.02) # Bias factor
+    return sitk.GetArrayFromImage(clahe.Execute(sitk.GetImageFromArray(image)))
+
+def speckle_reducing_anisotropic_diffusion(image, conductance, iterations):
+    srad = sitk.SpeckleReducingAnisotropicDiffusionImageFilter()
+    srad.SetConductanceParameter(conductance)
+    srad.SetNumberOfIterations(iterations)
+    return sitk.GetArrayFromImage(srad.Execute(sitk.GetImageFromArray(image)))
+
+
+# --- 2. 3D CNN Feature Extraction (using MONAI ResNet) ---
+class FeatureExtractor3D(nn.Module):
+    def __init__(self, model_type="3dcnn", cnn_blocks_down= [1, 2, 2, 2], cnn_blocks_up=[1, 1, 1], cnn_channels=(64, 128, 256, 512, 1024)): # ResNet3D-like architecture
+        super().__init__()
+        self.model_type = model_type.lower()
+
+        if self.model_type == "3dcnn":
+            self.conv_in = nn.Conv3d(1, cnn_channels[0], kernel_size=7, stride=2, padding=3, bias=False) # Input conv layer for 3D
+            self.bn_in = nn.BatchNorm3d(cnn_channels[0])
+            self.relu_in = nn.ReLU(inplace=True)
+            self.maxpool_in = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+
+            self.res_layers_down = nn.ModuleList()
+            for i in range(len(cnn_blocks_down)):
+                self.res_layers_down.append(self._make_layer(ResNetBlock, cnn_blocks_down[i], cnn_channels[i], cnn_channels[i+1], stride=2 if i < len(cnn_blocks_down) -1 else 1)) # Downsampling layers
+
+            self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1)) # Global average pooling for 3D
+            self.feature_size = cnn_channels[-1] # Output feature size
+
+        elif self.model_type == "vit": # Still supports 2D ViT for comparison or if input is 2D
+            self.vit_model = ViT(
+                in_channels=1, # Assuming grayscale input
+                img_size=(224, 224),
+                patch_size=(16, 16),
+                hidden_size=768,
+                mlp_dim=3072,
+                num_layers=12,
+                num_heads=12,
+                pos_embed="conv",
+                classification=False # No classification head needed
+            )
+            self.feature_size = 768 # ViT hidden size
+
+        else:
+            raise ValueError("Invalid model_type. Choose '3dcnn' or 'vit'.")
+
+
+    def _make_layer(self, block, blocks, in_channels, out_channels, stride=1):
+        downsample = None
+        if stride != 1 or in_channels != out_channels:
+            downsample = nn.Sequential(
+                nn.Conv3d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm3d(out_channels),
+            )
+        layers = []
+        layers.append(block(in_channels, out_channels, stride, downsample)) # First block with downsample if needed
+        for _ in range(1, blocks): # Remaining blocks without downsampling
+            layers.append(block(out_channels, out_channels))
+
+        return nn.Sequential(*layers)
+
+
+    def forward(self, image_tensor):
+        if self.model_type == "3dcnn":
+            # 3D CNN Forward Pass
+            x = self.conv_in(image_tensor)
+            x = self.bn_in(x)
+            x = self.relu_in(x)
+            x = self.maxpool_in(x)
+
+            for layer in self.res_layers_down:
+                x = layer(x)
+
+            x = self.avgpool(x)
+            image_features = torch.flatten(x, 1) # Flatten for feature vector [batch_size, feature_size]
+
+        elif self.model_type == "vit":
+            # 2D ViT Forward Pass (assuming input is still 2D or taking slices)
+            image_features = self.vit_model(image_tensor) # [batch_size, num_patches + 1, hidden_size]
+            image_features = image_features[:, 0, :] # CLS token
+
+        return image_features
+
+
+# --- 3. Improved Feature Integration (Cross-Attention - same as before, can be further enhanced) ---
+class CrossAttention(nn.Module): # ... (Same CrossAttention class definition as before) ...
+    def __init__(self, image_feature_size, lm_hidden_size, num_heads=8):
+        super().__init__()
+        self.image_feature_size = image_feature_size
+        self.lm_hidden_size = lm_hidden_size
+        self.num_heads = num_heads
+        self.head_dim = lm_hidden_size // num_heads
+
+        self.query = nn.Linear(lm_hidden_size, lm_hidden_size)
+        self.key = nn.Linear(image_feature_size, lm_hidden_size)
+        self.value = nn.Linear(image_feature_size, lm_hidden_size)
+        self.out_projection = nn.Linear(lm_hidden_size, lm_hidden_size)
+
+    def forward(self, lm_embeddings, image_features):
+        # lm_embeddings: [batch_size, seq_len, lm_hidden_size]
+        # image_features: [batch_size, feature_size]
+
+        batch_size, seq_len, _ = lm_embeddings.size()
+
+        # Prepare image features for attention (repeat for each sequence position)
+        image_features = image_features.unsqueeze(1).repeat(1, seq_len, 1)  # [batch_size, seq_len, image_feature_size]
+
+        Q = self.query(lm_embeddings).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        K = self.key(image_features).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        V = self.value(image_features).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        attention_weights = F.softmax(attention_scores, dim=-1)
+        attended_values = torch.matmul(attention_weights, V)
+
+        attended_values = attended_values.transpose(1, 2).contiguous().view(batch_size, seq_len, self.lm_hidden_size)
+        output = self.out_projection(attended_values)
+
+        return output
+
+
+# --- 4. Reasoning & Report Generation (with Chain-of-Thought - same as before) ---
+def generate_report(image_features, lm_model, tokenizer, cross_attention, prompt_prefix="Medical image analysis report. Findings:", max_length=200, num_return_sequences=1):
+    prompt_text = prompt_prefix + " Let's think step by step."  # CoT prompting
+    input_tokens = tokenizer(prompt_text, return_tensors="pt").to(image_features.device)
+
+
+    with torch.no_grad():
+      # Get initial LM embeddings
+      initial_embeddings = lm_model.get_input_embeddings()(input_tokens.input_ids)
+      # Apply cross-attention
+      attended_embeddings = cross_attention(initial_embeddings, image_features)
+      # Add attended embeddings to initial embeddings (residual connection)
+      integrated_embeddings = initial_embeddings + attended_embeddings
+
+
+      output_sequences = lm_model.generate(
+            inputs_embeds=integrated_embeddings,
+            attention_mask=input_tokens.attention_mask,
+            max_length=max_length,
+            num_return_sequences=num_return_sequences,
+            do_sample=True,
+            top_k=50,
+            top_p=0.95,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+
+    reports = [tokenizer.decode(seq, skip_special_tokens=True) for seq in output_sequences]
+    return reports
+
+
+# --- 5. Complete GRPO Implementation (same as before) ---
+def grpo_step(image_features, lm_model, tokenizer, optimizer, reward_function, cross_attention, num_samples=4, epsilon=0.2, kl_penalty_weight=0.01, old_policy_logits=None): # Pass old_policy_logits
+    # --- Sampling ---
+    reports = generate_report(image_features, lm_model, tokenizer, cross_attention, num_return_sequences=num_samples)
+    rewards = [reward_function(report) for report in reports]
+
+    # --- GRPO Advantage Calculation ---
+    rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=image_features.device)
+    mean_reward = torch.mean(rewards_tensor)
+    std_reward = torch.std(rewards_tensor) + 1e-8
+    advantages = (rewards_tensor - mean_reward) / std_reward
+
+    # --- GRPO Loss Calculation ---
+    optimizer.zero_grad()
+    total_loss = 0
+
+    prompt_text = "Medical image analysis report. Findings: Let's think step by step."
+    input_tokens = tokenizer(prompt_text, return_tensors="pt").to(image_features.device)
+
+    # Get initial LM embeddings
+    initial_embeddings = lm_model.get_input_embeddings()(input_tokens.input_ids)
+    # Cross-Attention Integration: Apply cross-attention
+    attended_embeddings = cross_attention(initial_embeddings, image_features)
+    integrated_embeddings = initial_embeddings + attended_embeddings
+
+    # Store current policy logits for KL calculation in the next step
+    with torch.no_grad():
+        current_policy_outputs = lm_model(inputs_embeds=integrated_embeddings, attention_mask=input_tokens.attention_mask)
+        current_policy_logits_detached = current_policy_outputs.logits.detach() # Detach to use as old policy in next step
+
+
+    for i in range(num_samples):
+          # Re-tokenize each sampled report to calculate probabilities under current policy
+          report_tokens = tokenizer(reports[i], return_tensors="pt", truncation=True, max_length=200).to(image_features.device)
+
+          # Pass integrated embeddings and attention mask
+          outputs = lm_model(inputs_embeds=integrated_embeddings, attention_mask=input_tokens.attention_mask, labels=report_tokens.input_ids)
+          logits = outputs.logits  # [batch_size, seq_len, vocab_size]
+
+          # Compute probabilities under the current policy (pi_theta)
+          log_probs = F.log_softmax(logits, dim=-1)
+          current_policy_log_probs = torch.gather(log_probs, 2, report_tokens.input_ids.unsqueeze(-1)).squeeze(-1)
+
+
+          # Use detached logits from previous step as old policy
+          old_logits = current_policy_logits_detached # Use detached logits from *previous* forward pass
+          old_log_probs = F.log_softmax(old_logits, dim=-1)
+          old_policy_log_probs = torch.gather(old_log_probs, 2, report_tokens.input_ids.unsqueeze(-1)).squeeze(-1)
+
+
+          # Importance Sampling Ratio
+          ratio = torch.exp(current_policy_log_probs - old_policy_log_probs)
+
+          # Clipped Surrogate Loss
+          surrogate_loss_unclipped = ratio * advantages[i]
+          surrogate_loss_clipped = torch.clamp(ratio, 1 - epsilon, 1 + epsilon) * advantages[i]
+          clipped_surrogate_loss = torch.min(surrogate_loss_unclipped, surrogate_loss_clipped)
+
+          # KL Divergence Penalty
+          kl_divergence = F.kl_div(old_log_probs, log_probs, reduction='batchmean', log_target=True) # Use batchmean for KL
+
+          # Total Loss for this sample
+          loss = -clipped_surrogate_loss.mean() + kl_penalty_weight * kl_divergence # Average clipped surrogate loss
+          total_loss += loss
+
+    # Average loss across samples
+    total_loss = total_loss / num_samples
+    total_loss.backward()
+    optimizer.step()
+    return total_loss.item(), current_policy_logits_detached # Return current policy logits for next step
+
+
+# --- 6. Enhanced Deterministic Reward Function ---
+def deterministic_reward_function(report, ground_truth=None):
+    reward = 0.0
+    report_lower = report.lower()
+
+    if ground_truth is None: # Default ground truth for testing
+        ground_truth = {
+            "has_nodule": True,
+            "nodule_size": "medium",
+            "nodule_location": "right upper lobe",
+            "pneumonia_present": False,
+            "differential_diagnoses": ["malignancy", "infection", "benign nodule"] # Example differential diagnoses
+        }
+
+    # --- Nodule Findings ---
+    if ground_truth["has_nodule"]:
+        if "nodule" in report_lower:
+            reward += 0.2  # Basic nodule mention
+            if ground_truth["nodule_size"] in report_lower: # Size mentioned
+                reward += 0.3
+            if ground_truth["nodule_location"] in report_lower: # Location mentioned
+                reward += 0.3
+        else:
+            reward -= 0.2 # Penalty for missing nodule when present
+    else:
+        if "no nodule" in report_lower or "no evidence of nodule" in report_lower:
+            reward += 0.3 # Correctly identified no nodule
+        elif "nodule" in report_lower:
+            reward -= 0.4 # Penalty for hallucinating nodule
+
+    # --- Pneumonia Findings ---
+    if ground_truth["pneumonia_present"]:
+        if "pneumonia" in report_lower or "consolidation" in report_lower: # More terms for pneumonia
+            reward += 0.4
+        else:
+            reward -= 0.3 # Penalty for missing pneumonia
+    else:
+        if "no pneumonia" in report_lower or "no consolidation" in report_lower or "lungs are clear" in report_lower:
+            reward += 0.2
+        elif "pneumonia" in report_lower or "consolidation" in report_lower:
+            reward -= 0.3 # Penalty for hallucinating pneumonia
+
+    # --- Differential Diagnoses (Example - very basic keyword matching) ---
+    if "differential" in report_lower or "consider" in report_lower: # Encourage differential diagnoses
+        for diagnosis in ground_truth["differential_diagnoses"]:
+            if diagnosis in report_lower:
+                reward += 0.1 # Reward for each relevant differential diagnosis mentioned
+
+    # --- Fluency and Completeness ---
+    if len(report.split()) < 15: # Encourage more descriptive reports
+        reward -= 0.1
+    if len(report.split()) > 250: # Penalize overly verbose reports
+        reward -= 0.05
+
+    return max(-1.0, min(1.0, reward)) # Clip reward to [-1, 1] for stability
+
+
+# --- 7. Dataset Handling (Improved with MONAI Dataset) ---
+class MedicalImageReportDataset(Dataset):
+    def __init__(self, image_dir, report_dir, modality, ground_truths):
+        self.image_dir = image_dir
+        self.report_dir = report_dir
+        self.modality = modality
+        self.image_paths, self.valid_modalities, self.report_paths = self._load_data()
+        self.ground_truths = ground_truths # Assume ground truths are aligned with image paths
+
+    def _load_data(self): # (Same loading logic as before, encapsulated in class)
+        image_paths = []
+        report_paths = []
+        valid_modalities = []
+
+        for filename in os.listdir(self.image_dir):
+            if filename.endswith((".png", ".jpg", ".dcm", ".nii.gz")): # Added more image formats
+                file_modality = filename.split("_")[-1].split(".")[0]
+                if file_modality.upper() == self.modality.upper():
+                    image_paths.append(os.path.join(self.image_dir, filename))
+                    report_id = filename.split("_")[1]
+                    report_path = os.path.join(self.report_dir, f"report_{report_id}.txt")
+                    if os.path.exists(report_path):
+                        report_paths.append(report_path)
+                        valid_modalities.append(file_modality)
+                    else:
+                        print(f"Warning: Report not found for {filename}")
+        return image_paths, valid_modalities, report_paths
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        modality = self.valid_modalities[idx]
+        report_path = self.report_paths[idx]
+        ground_truth = self.ground_truths[idx] if self.ground_truths else None # Get corresponding ground truth
+
+        image_tensor = preprocess_medical_image(image_path, modality) # Preprocess on-the-fly
+        with open(report_path, 'r') as f:
+            report_text = f.read()
+
+        return {"image": image_tensor, "report": report_text, "ground_truth": ground_truth}
+
+
+# --- 8. Data Augmentation (Basic Example - Random Crop and Flip) ---
+def augment_image(image_tensor): # Simple augmentation function
+    aug_transform = transforms.Compose([
+        transforms.RandomCrop(224, padding=20), # Random crop with padding
+        transforms.RandomHorizontalFlip(p=0.5), # Random horizontal flip
+    ])
+    return aug_transform(image_tensor)
+
+
+# --- Main Script ---
+if __name__ == "__main__":
+    # --- Configuration ---
+    config = {
+        "image_dir": "dummy_images_3d", # Changed to 3d dummy images
+        "report_dir": "dummy_reports_3d", # Changed to 3d dummy reports
+        "modality": "CT", # Choose modality
+        "num_samples_grpo": 4,
+        "num_epochs": 15, # Increased epochs
+        "learning_rate": 1e-4,
+        "kl_penalty": 0.015,
+        "epsilon": 0.2,
+        "feature_extractor_type": "3dcnn", # Choose '3dcnn' or 'vit'
+        "use_augmentation": True, # Enable/disable augmentation
+        "batch_size": 2 # Reduced batch size for 3D CNN (adjust based on GPU memory)
+    }
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = f"grpo_medical_reports_{config['modality']}_{config['feature_extractor_type']}_{current_time}"
+    os.makedirs(output_dir, exist_ok=True)
+    config_filepath = os.path.join(output_dir, "config.json")
+    with open(config_filepath, 'w') as f:
+        json.dump(config, f, indent=4) # Save config
+
+    # --- Create Dummy 3D Data ---
+    def create_dummy_3d_data(num_samples=20, image_dir="dummy_images_3d", report_dir="dummy_reports_3d"): # Function for 3D dummy data
+        os.makedirs(image_dir, exist_ok=True)
+        os.makedirs(report_dir, exist_ok=True)
+        modalities = ["CT", "MRI", "X-RAY"] # Still using modalities
+        ground_truths = []
+        for i in range(num_samples):
+            modality = random.choice(modalities)
+            # Create a dummy 3D image (random noise volume)
+            img_array = np.random.rand(64, 224, 224) * 255 # 3D volume (depth, height, width)
+            img = sitk.GetImageFromArray(img_array.astype(np.uint8)) # Create SimpleITK image
+            sitk.WriteImage(img, os.path.join(image_dir, f"image_{i}_{modality}.nii.gz")) # Save as NIfTI
+
+            # Create dummy ground truth and report (same as before)
+            ground_truth = { # ... (same ground truth generation logic) ...
+                "has_nodule": random.choice([True, False]),
+                "nodule_size": random.choice(["small", "medium", "large"]) if random.random() < 0.5 else None,
+                "nodule_location": random.choice(["right upper lobe", "left lower lobe", "right lower lobe"]) if random.random() < 0.5 else None,
+                "pneumonia_present": random.choice([True, False]),
+                "differential_diagnoses": random.choices(["malignancy", "infection", "benign nodule", "inflammation"], k=random.randint(0, 3))
+            }
+            ground_truths.append(ground_truth)
+
+            report = f"3D Image {i} ({modality}). " # 3D in report
+            if ground_truth['has_nodule']: # ... (same report generation logic) ...
+                report += f"A {ground_truth['nodule_size']} nodule is present"
+                if ground_truth['nodule_location']:
+                    report += f" in the {ground_truth['nodule_location']}."
+            else:
+                report += "No nodule is detected in 3D volume. " # 3D in report
+            if ground_truth['pneumonia_present']:
+                report += "Pneumonia is present in 3D volume." # 3D in report
+            else:
+                report += "No pneumonia is detected in 3D volume." # 3D in report
+            report += " Differential diagnoses to consider: " + ", ".join(ground_truth['differential_diagnoses']) + "." # Differential diagnoses
+            report_path = os.path.join(report_dir, f"report_{i}.txt")
+            with open(report_path, "w") as f:
+                f.write(report)
+        return ground_truths
+    ground_truths_3d = create_dummy_3d_data(image_dir=config["image_dir"], report_dir=config["report_dir"]) # Create 3D dummy data
+
+    # --- Load Dataset and DataLoader ---
+    dataset = MedicalImageReportDataset(config["image_dir"], config["report_dir"], config["modality"], ground_truths_3d)
+    dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=True) # DataLoader for dataset
+
+    # --- Initialize Models and Optimizer ---
+    feature_extractor = FeatureExtractor3D(model_type=config["feature_extractor_type"]).to(device) # 3D Feature Extractor
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    lm_model = AutoModelForCausalLM.from_pretrained("gpt2").to(device)
+    cross_attention = CrossAttention(feature_extractor.feature_size, lm_model.config.hidden_size).to(device)
+    optimizer = torch.optim.AdamW(list(lm_model.parameters()) + list(cross_attention.parameters()) + list(feature_extractor.parameters()), lr=config["learning_rate"]) # Optimizer for all params
+
+    # --- Device ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    feature_extractor.to(device)
+    lm_model.to(device)
+    cross_attention.to(device)
+
+    # --- GRPO Training Loop ---
+    start_time = time.time()
+    old_policy_logits_for_next_step = None # Initialize old policy logits
+
+    for epoch in range(config["num_epochs"]):
+        epoch_losses = []
+        for batch_idx, batch_data in enumerate(dataloader): # Iterate through DataLoader
+            image_tensor = batch_data["image"].to(device) # Get image tensor from batch
+            ground_truths_batch = batch_data["ground_truth"] # Get ground truths for batch
+
+            if config["use_augmentation"]:
+                image_tensor = augment_image(image_tensor) # Apply augmentation
+
+            image_features = feature_extractor(image_tensor) # Extract features for batch
+
+            batch_loss = 0
+            for i in range(image_tensor.size(0)): # Iterate through batch dimension
+                single_image_features = image_features[i].unsqueeze(0) # Get features for single image
+                single_ground_truth = ground_truths_batch[i] # Get ground truth for single image
+
+                def current_reward_function(report): # Reward function with ground truth
+                    return deterministic_reward_function(report, single_ground_truth)
+
+                loss, old_policy_logits_for_next_step = grpo_step( # Pass and update old_policy_logits
+                    single_image_features, lm_model, tokenizer, optimizer, current_reward_function, cross_attention,
+                    num_samples=config["num_samples_grpo"], epsilon=config["epsilon"], kl_penalty_weight=config["kl_penalty"],
+                    old_policy_logits=old_policy_logits_for_next_step # Pass old policy logits
+                )
+                batch_loss += loss # Accumulate loss
+
+            avg_batch_loss = batch_loss / image_tensor.size(0) # Average loss over batch
+            epoch_losses.append(avg_batch_loss)
+
+            print(f"Epoch {epoch+1}/{config['num_epochs']}, Batch {batch_idx+1}/{len(dataloader)}, Avg GRPO Loss: {avg_batch_loss:.4f}")
+
+        avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
+        epoch_time = time.time() - start_time
+        print(f"Epoch {epoch+1}/{config['num_epochs']}, Average GRPO Loss: {avg_epoch_loss:.4f}, Time: {epoch_time:.2f} seconds")
+        start_time = time.time() # Reset timer for next epoch
+
+        # Save checkpoint every epoch
+        checkpoint_path = os.path.join(output_dir, f"checkpoint_epoch_{epoch+1}.pth")
+        torch.save({
+            'epoch': epoch + 1,
+            'feature_extractor_state_dict': feature_extractor.state_dict(),
+            'lm_model_state_dict': lm_model.state_dict(),
+            'cross_attention_state_dict': cross_attention.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': avg_epoch_loss,
+            'config': config
+        }, checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}")
+
+
+    print("Training complete.")
+
+    # --- Example Inference ---
+    # Load checkpoint for inference (optional - can use last saved checkpoint or best checkpoint)
+    checkpoint = torch.load(checkpoint_path) # Load last checkpoint
+    feature_extractor.load_state_dict(checkpoint['feature_extractor_state_dict'])
+    lm_model.load_state_dict(checkpoint['lm_model_state_dict'])
+    cross_attention.load_state_dict(checkpoint['cross_attention_state_dict'])
+    feature_extractor.eval() # Set models to eval mode
+    lm_model.eval()
+    cross_attention.eval()
+
+    test_dataset = MedicalImageReportDataset(config["image_dir"], config["report_dir"], config["modality"], ground_truths_3d) # Use same dataset for testing (or create separate test set)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False) # Batch size 1 for inference
+
+    for test_batch in test_dataloader: # Iterate through test dataset
+        test_image_tensor = test_batch["image"].to(device)
+        test_image_features = feature_extractor(test_image_tensor)
+        generated_reports = generate_report(test_image_features, lm_model, tokenizer, cross_attention, num_return_sequences=1)
+        print(f"Generated Report for test image: {generated_reports[0]}")
