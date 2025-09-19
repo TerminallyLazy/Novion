@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Draggable, { DraggableEventHandler } from 'react-draggable';
-import { Play, Pause, Mic, Monitor, Video, X, Trash2, ChevronUp, ChevronDown, Maximize2, Clapperboard, MinimizeIcon, AlignVerticalSpaceBetween } from 'lucide-react';
+import { Play, Pause, Mic, Monitor, Video, X, Trash2, ChevronUp, ChevronDown, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGemini } from './Providers';
 import { geminiEvents } from '@/lib/hooks/useGeminiConnection';
@@ -21,18 +21,10 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
   const [panelSize, setPanelSize] = useState({ width: 320, height: 300 });
   const [isResizing, setIsResizing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState(() => {
-    const width = 320;
-    const height = 300;
-    const padding = 16;
-    const initialX = window.innerWidth / 2 - width / 2;
-    const initialY = window.innerHeight - height - padding;
-    return { x: initialX, y: initialY };
-  });
+  const [position, setPosition] = useState({ x: 0, y: 0 }); // Initialize with safe defaults
   const [actualHeight, setActualHeight] = useState(100);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
   const transitionRafRef = useRef<number>();
   const transitionTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -42,6 +34,11 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
   const [isLogMaximized, setIsLogMaximized] = useState(false);
 
   const calculateBounds = useCallback(() => {
+    // Guard against SSR
+    if (typeof window === 'undefined') {
+      return { maxX: 0, maxY: 0, padding: 16 };
+    }
+    
     const currentHeight = isLogExpanded ? panelSize.height : 100;
     const padding = 16;
     return {
@@ -125,6 +122,9 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
 
   // Initialize position and handle window resize
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+    
     if (!isInitialized) {
       const { maxY, padding } = calculateBounds();
       const initialX = window.innerWidth / 2 - panelSize.width / 2;
@@ -391,309 +391,287 @@ export function MediaControlPanel({ onClose }: MediaControlPanelProps) {
 
   return (
     <>
-      {isMinimized ? (
-        <button
-          onClick={() => setIsMinimized(false)}
+      <Draggable
+        nodeRef={panelRef}
+        position={position}
+        onStart={handleDragStart}
+        onDrag={handleDrag}
+        onStop={handleDragStop}
+        handle=".handle"
+        disabled={isResizing || isTransitioning}
+        scale={1}
+        positionOffset={{ x: 0, y: 0 }}
+      >
+        <div 
+          ref={panelRef}
           className={cn(
-            "fixed bottom-10 right-20 z-50",
-            "flex items-center justify-center gap-2 px-4 py-2 rounded-full",
-            "bg-[#1b2237] text-[#4cedff] border border-[#4cedff]/70",
-            "shadow-lg hover:shadow-md hover:border-[#4cedff]",
-            "transition-all duration-200 hover:scale-105"
+            "absolute bg-white dark:bg-[#1b2237] rounded-lg shadow-lg border border-[#e4e7ec] dark:border-[#2D3848] p-3",
+            "transition-all duration-300 ease-out will-change-transform",
+            isDragging && "cursor-grabbing shadow-2xl scale-[1.02] border-[#4cedff]/50",
+            isLogExpanded ? "shadow-lg" : "shadow-md",
+            isTransitioning && "pointer-events-none"
           )}
-        >
-          <AlignVerticalSpaceBetween className="h-5 w-5 text-[#4cedff]" />
-          {/* <span className="whitespace-nowrap">Media Controls</span> */}
-        </button>
-      ) : (
-        <Draggable
-          nodeRef={panelRef}
-          position={position}
-          onStart={handleDragStart}
-          onDrag={handleDrag}
-          onStop={handleDragStop}
-          handle=".handle"
-          disabled={isResizing || isTransitioning}
-          scale={1}
-          positionOffset={{ x: 0, y: 0 }}
+          style={{
+            width: `${panelSize.width}px`,
+            height: `${actualHeight}px`,
+            zIndex: 9999,
+            touchAction: 'none',
+            transform: `translate3d(0,0,0) scale(${isDragging ? 1.02 : 1})`,
+            transition: isDragging 
+              ? 'none' 
+              : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            willChange: 'transform, height, box-shadow',
+          }}
         >
           <div 
-            ref={panelRef}
             className={cn(
-              "absolute bg-white dark:bg-[#1b2237] rounded-lg shadow-lg border border-[#e4e7ec] dark:border-[#2D3848] p-3",
-              "transition-all duration-300 ease-out will-change-transform",
-              isDragging && "cursor-grabbing shadow-2xl scale-[1.02] border-[#4cedff]/50",
-              isLogExpanded ? "shadow-lg" : "shadow-md",
-              isTransitioning && "pointer-events-none"
+              "handle select-none flex items-center justify-between mb-2 px-2 py-1 rounded-md",
+              "transition-all duration-150 ease-in-out",
+              isDragging 
+                ? "cursor-grabbing bg-gray-100 dark:bg-[#2D3848]/50 shadow-inner" 
+                : "cursor-grab hover:bg-gray-50 dark:hover:bg-[#2D3848]/30"
             )}
             style={{
-              width: `${panelSize.width}px`,
-              height: `${actualHeight}px`,
-              zIndex: 9999,
-              touchAction: 'none',
-              transform: `translate3d(0,0,0) scale(${isDragging ? 1.02 : 1})`,
-              transition: isDragging 
-                ? 'none' 
-                : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              willChange: 'transform, height, box-shadow',
+              transform: isDragging ? 'scale(0.98)' : 'scale(1)',
             }}
           >
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "w-2 h-2 rounded-full transition-all duration-300",
+                isConnecting && "animate-pulse",
+                isConnecting ? "bg-yellow-400" :
+                isConnected ? "bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]" : 
+                "bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.5)]"
+              )} />
+              <span className={cn(
+                "text-xs transition-colors duration-200",
+                isConnecting ? "text-yellow-400/80" :
+                isConnected ? "text-green-400/80" : "text-red-400/80"
+              )}>
+                {isConnecting ? "Connecting..." :
+                 isConnected ? "Connected" : "Disconnected"}
+              </span>
+            </div>
+            {/* {onClose && (
+              <button
+                onClick={onClose}
+                className={cn(
+                  "p-1 rounded hover:bg-gray-100 dark:hover:bg-[#374357] text-gray-500 dark:text-foreground/60",
+                  "transition-colors duration-150 ease-in-out"
+                )}
+                title="Close Panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )} */}
+          </div>
+
+          <div className="flex justify-center gap-2 mb-2">
+            <button
+              onClick={handleStartClick}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-200",
+                "transform hover:scale-105 active:scale-95",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
+                "relative overflow-hidden",
+                (isConnected || activeButton === 'connected') 
+                  ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
+                  : "text-gray-500 dark:text-foreground/80"
+              )}
+              title={isConnected ? "Disconnect from Gemini API" : "Connect to Gemini API"}
+            >
+              <div className={cn(
+                "absolute inset-0 bg-[#4cedff]/10",
+                "transition-transform duration-300",
+                (isConnected || activeButton === 'connected') ? "scale-100" : "scale-0"
+              )} />
+              {(isConnected || activeButton === 'connected') ? (
+                <Pause className="h-5 w-5 relative z-10" />
+              ) : (
+                <Play className="h-5 w-5 relative z-10" />
+              )}
+            </button>
+
+            <button
+              onClick={handleMicrophoneClick}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-200",
+                "transform hover:scale-105 active:scale-95",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
+                "relative overflow-hidden",
+                activeButton === 'microphone' 
+                  ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
+                  : "text-gray-500 dark:text-foreground/80"
+              )}
+              title="Toggle Microphone"
+            >
+              <div className={cn(
+                "absolute inset-0 bg-[#4cedff]/10",
+                "transition-transform duration-300",
+                activeButton === 'microphone' ? "scale-100" : "scale-0"
+              )} />
+              <Mic className="h-5 w-5 relative z-10" />
+            </button>
+
+            <button
+              onClick={handleScreenshareClick}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-200",
+                "transform hover:scale-105 active:scale-95",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
+                "relative overflow-hidden",
+                activeButton === 'screenshare' 
+                  ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
+                  : "text-gray-500 dark:text-foreground/80"
+              )}
+              title="Share Screen"
+            >
+              <div className={cn(
+                "absolute inset-0 bg-[#4cedff]/10",
+                "transition-transform duration-300",
+                activeButton === 'screenshare' ? "scale-100" : "scale-0"
+              )} />
+              <Monitor className="h-5 w-5 relative z-10" />
+            </button>
+
+            <button
+              onClick={handleWebcamClick}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-200",
+                "transform hover:scale-105 active:scale-95",
+                "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
+                "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
+                "relative overflow-hidden",
+                activeButton === 'webcam' 
+                  ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
+                  : "text-gray-500 dark:text-foreground/80"
+              )}
+              title="Toggle Webcam"
+            >
+              <div className={cn(
+                "absolute inset-0 bg-[#4cedff]/10",
+                "transition-transform duration-300",
+                activeButton === 'webcam' ? "scale-100" : "scale-0"
+              )} />
+              <Video className="h-5 w-5 relative z-10" />
+            </button>
+          </div>
+
+          <div className={cn(
+            "transition-all duration-300 ease-in-out",
+            "overflow-hidden flex flex-col",
+            isLogExpanded ? "h-[calc(100%-100px)]" : "h-[32px]"
+          )}>
             <div 
               className={cn(
-                "handle select-none flex items-center justify-between mb-2 px-2 py-1 rounded-md",
-                "transition-all duration-150 ease-in-out",
-                isDragging 
-                  ? "cursor-grabbing bg-gray-100 dark:bg-[#2D3848]/50 shadow-inner" 
-                  : "cursor-grab hover:bg-gray-50 dark:hover:bg-[#2D3848]/30"
+                "flex items-center justify-between",
+                "cursor-pointer rounded-md px-2 py-1",
+                "transition-colors duration-150 ease-in-out",
+                "hover:bg-gray-50 dark:hover:bg-[#2D3848]"
               )}
-              style={{
-                transform: isDragging ? 'scale(0.98)' : 'scale(1)',
-              }}
+              onClick={() => setIsLogExpanded(!isLogExpanded)}
             >
+              <span className="text-xs font-medium text-gray-500 dark:text-foreground/60">Event Log</span>
               <div className="flex items-center gap-2">
+                {isLogExpanded && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearLogs();
+                      }}
+                      className={cn(
+                        "p-1 rounded-md",
+                        "transition-all duration-150 ease-in-out",
+                        "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
+                        "active:scale-95",
+                        "text-gray-400 dark:text-foreground/60"
+                      )}
+                      title="Clear logs"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsLogMaximized(!isLogMaximized);
+                      }}
+                      className={cn(
+                        "p-1 rounded-md",
+                        "transition-all duration-150 ease-in-out",
+                        "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
+                        "active:scale-95",
+                        "text-gray-400 dark:text-foreground/60"
+                      )}
+                      title={isLogMaximized ? "Minimize" : "Maximize"}
+                    >
+                      <Maximize2 className="h-3 w-3" />
+                    </button>
+                  </>
+                )}
                 <div className={cn(
-                  "w-2 h-2 rounded-full transition-all duration-300",
-                  isConnecting && "animate-pulse",
-                  isConnecting ? "bg-yellow-400" :
-                  isConnected ? "bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]" : 
-                  "bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.5)]"
-                )} />
-                <span className={cn(
-                  "text-xs transition-colors duration-200",
-                  isConnecting ? "text-yellow-400/80" :
-                  isConnected ? "text-green-400/80" : "text-red-400/80"
+                  "transition-transform duration-200",
+                  isLogExpanded ? "rotate-0" : "-rotate-90"
                 )}>
-                  {isConnecting ? "Connecting..." :
-                  isConnected ? "Connected" : "Disconnected"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setIsMinimized(true)}
-                  className={cn(
-                    "p-1 rounded hover:bg-gray-100 dark:hover:bg-[#374357] text-gray-500 dark:text-foreground/60",
-                    "transition-colors duration-150 ease-in-out"
+                  {isLogExpanded ? (
+                    <ChevronUp className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
                   )}
-                  title="Minimize Panel"
-                >
-                  <MinimizeIcon className="h-4 w-4" />
-                </button>
-                {/* {onClose && (
-                  <button
-                    onClick={onClose}
-                    className={cn(
-                      "p-1 rounded hover:bg-gray-100 dark:hover:bg-[#374357] text-gray-500 dark:text-foreground/60",
-                      "transition-colors duration-150 ease-in-out"
-                    )}
-                    title="Close Panel"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )} */}
-              </div>
-            </div>
-
-            <div className="flex justify-center gap-2 mb-2">
-              <button
-                onClick={handleStartClick}
-                className={cn(
-                  "p-2 rounded-lg transition-all duration-200",
-                  "transform hover:scale-105 active:scale-95",
-                  "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                  "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
-                  "relative overflow-hidden",
-                  (isConnected || activeButton === 'connected') 
-                    ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                    : "text-gray-500 dark:text-foreground/80"
-                )}
-                title={isConnected ? "Disconnect from Gemini API" : "Connect to Gemini API"}
-              >
-                <div className={cn(
-                  "absolute inset-0 bg-[#4cedff]/10",
-                  "transition-transform duration-300",
-                  (isConnected || activeButton === 'connected') ? "scale-100" : "scale-0"
-                )} />
-                {(isConnected || activeButton === 'connected') ? (
-                  <Pause className="h-5 w-5 relative z-10" />
-                ) : (
-                  <Play className="h-5 w-5 relative z-10" />
-                )}
-              </button>
-
-              <button
-                onClick={handleMicrophoneClick}
-                className={cn(
-                  "p-2 rounded-lg transition-all duration-200",
-                  "transform hover:scale-105 active:scale-95",
-                  "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                  "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
-                  "relative overflow-hidden",
-                  activeButton === 'microphone' 
-                    ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                    : "text-gray-500 dark:text-foreground/80"
-                )}
-                title="Toggle Microphone"
-              >
-                <div className={cn(
-                  "absolute inset-0 bg-[#4cedff]/10",
-                  "transition-transform duration-300",
-                  activeButton === 'microphone' ? "scale-100" : "scale-0"
-                )} />
-                <Mic className="h-5 w-5 relative z-10" />
-              </button>
-
-              <button
-                onClick={handleScreenshareClick}
-                className={cn(
-                  "p-2 rounded-lg transition-all duration-200",
-                  "transform hover:scale-105 active:scale-95",
-                  "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                  "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
-                  "relative overflow-hidden",
-                  activeButton === 'screenshare' 
-                    ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                    : "text-gray-500 dark:text-foreground/80"
-                )}
-                title="Share Screen"
-              >
-                <div className={cn(
-                  "absolute inset-0 bg-[#4cedff]/10",
-                  "transition-transform duration-300",
-                  activeButton === 'screenshare' ? "scale-100" : "scale-0"
-                )} />
-                <Monitor className="h-5 w-5 relative z-10" />
-              </button>
-
-              <button
-                onClick={handleWebcamClick}
-                className={cn(
-                  "p-2 rounded-lg transition-all duration-200",
-                  "transform hover:scale-105 active:scale-95",
-                  "focus:outline-none focus:ring-2 focus:ring-[#4cedff]/50",
-                  "bg-gray-50 dark:bg-[#2D3848] hover:bg-gray-100 dark:hover:bg-[#374357]",
-                  "relative overflow-hidden",
-                  activeButton === 'webcam' 
-                    ? "text-[#4cedff] shadow-[0_0_15px_rgba(76,237,255,0.4)]" 
-                    : "text-gray-500 dark:text-foreground/80"
-                )}
-                title="Toggle Webcam"
-              >
-                <div className={cn(
-                  "absolute inset-0 bg-[#4cedff]/10",
-                  "transition-transform duration-300",
-                  activeButton === 'webcam' ? "scale-100" : "scale-0"
-                )} />
-                <Video className="h-5 w-5 relative z-10" />
-              </button>
-            </div>
-
-            <div className={cn(
-              "transition-all duration-300 ease-in-out",
-              "overflow-hidden flex flex-col",
-              isLogExpanded ? "h-[calc(100%-100px)]" : "h-[32px]"
-            )}>
-              <div 
-                className={cn(
-                  "flex items-center justify-between",
-                  "cursor-pointer rounded-md px-2 py-1 mb-1",
-                  "transition-colors duration-150 ease-in-out",
-                  "hover:bg-gray-50 dark:hover:bg-[#2D3848]"
-                )}
-                onClick={() => setIsLogExpanded(!isLogExpanded)}
-              >
-                <span className="text-xs font-medium text-gray-500 dark:text-foreground/60">Event Log</span>
-                <div className="flex items-center gap-2 mr-1">
-                  {isLogExpanded && (
-                    <>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearLogs();
-                        }}
-                        className={cn(
-                          "p-1 rounded-md",
-                          "transition-all duration-150 ease-in-out",
-                          "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
-                          "active:scale-95",
-                          "text-gray-400 dark:text-foreground/60"
-                        )}
-                        title="Clear logs"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsLogMaximized(!isLogMaximized);
-                        }}
-                        className={cn(
-                          "p-1 rounded-md",
-                          "transition-all duration-150 ease-in-out",
-                          "hover:bg-gray-100 dark:hover:bg-[#374357] hover:text-[#4cedff]",
-                          "active:scale-95",
-                          "text-gray-400 dark:text-foreground/60"
-                        )}
-                        title={isLogMaximized ? "Minimize" : "Maximize"}
-                      >
-                        <Maximize2 className="h-3 w-3" />
-                      </button>
-                    </>
-                  )}
-                  <div className={cn(
-                    "transition-transform duration-200",
-                    isLogExpanded ? "rotate-0" : "-rotate-90"
-                  )}>
-                    {isLogExpanded ? (
-                      <ChevronUp className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3 text-gray-400 dark:text-foreground/60" />
-                    )}
-                  </div>
                 </div>
               </div>
-              <div 
-                ref={logContainerRef}
-                className={cn(
-                  "bg-gray-50 dark:bg-[#161d2f] rounded-md p-2 text-xs font-mono",
-                  "transition-all duration-300 ease-in-out",
-                  "scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#2D3848] scrollbar-track-transparent",
-                  isLogExpanded ? "flex-1 opacity-100 mt-1" : "h-0 opacity-0 mt-0"
-                )}
-              >
-                {logs.map((log, index) => (
-                  <div 
-                    key={index}
-                    className={cn(
-                      "py-1 transition-opacity duration-150",
-                      "animate-in fade-in slide-in-from-bottom-1",
-                      log.type === 'error' && "text-red-400",
-                      log.type === 'api' && "text-blue-400",
-                      log.type === 'gemini' && "text-[#4cedff]",
-                      log.type === 'info' && "text-gray-500 dark:text-foreground/60"
-                    )}
-                  >
-                    <span className="opacity-50">[{log.timestamp.toLocaleTimeString()}]</span>{' '}
-                    {log.message}
-                  </div>
-                ))}
-              </div>
             </div>
-
-            {/* Resize handle - only show when expanded */}
-            {isLogExpanded && (
-              <div
-                ref={resizeRef}
-                className={cn(
-                  "absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50",
-                  "transition-all duration-150 ease-in-out",
-                  isResizing && "scale-110",
-                  "hover:opacity-80"
-                )}
-              />
-            )}
+            <div 
+              ref={logContainerRef}
+              className={cn(
+                "bg-gray-50 dark:bg-[#161d2f] rounded-md p-2 text-xs font-mono",
+                "transition-all duration-300 ease-in-out",
+                "scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#2D3848] scrollbar-track-transparent",
+                isLogExpanded ? "flex-1 opacity-100 mt-1" : "h-0 opacity-0 mt-0"
+              )}
+            >
+              {logs.map((log, index) => (
+                <div 
+                  key={index}
+                  className={cn(
+                    "py-1 transition-opacity duration-150",
+                    "animate-in fade-in slide-in-from-bottom-1",
+                    log.type === 'error' && "text-red-400",
+                    log.type === 'api' && "text-blue-400",
+                    log.type === 'gemini' && "text-[#4cedff]",
+                    log.type === 'info' && "text-gray-500 dark:text-foreground/60"
+                  )}
+                >
+                  <span className="opacity-50">[{log.timestamp.toLocaleTimeString()}]</span>{' '}
+                  {log.message}
+                </div>
+              ))}
+            </div>
           </div>
-        </Draggable>
-      )}
+
+          {/* Resize handle - only show when expanded */}
+          {isLogExpanded && (
+            <div
+              ref={resizeRef}
+              className={cn(
+                "absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50",
+                "transition-all duration-150 ease-in-out",
+                isResizing && "scale-110",
+                "hover:opacity-80"
+              )}
+              // onMouseDown={handleResizeStart}
+              // style={{
+              //   background: 'linear-gradient(135deg, transparent 50%, #4cedff 50%)',
+              //   borderBottomRightRadius: '0.5rem',
+              //   boxShadow: isResizing ? '0 0 10px rgba(76,237,255,0.4)' : 'none',
+              // }}
+            />
+          )}
+        </div>
+      </Draggable>
 
       {/* Maximized Event Log Modal */}
       {isLogMaximized && (

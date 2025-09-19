@@ -1,15 +1,36 @@
-import { utilities } from '@cornerstonejs/core';
+// Import only non-cornerstone dependencies statically
 import { api } from 'dicomweb-client';
-import * as csTools3d from '@cornerstonejs/tools';
-import { ToolGroupManager } from '@cornerstonejs/tools';
-import { BrushTool, SegmentationDisplayTool } from '@cornerstonejs/tools';
-import { volumeLoader, Enums, RenderingEngine } from '@cornerstonejs/core';
-import { Enums as ToolEnums } from '@cornerstonejs/tools';
 
 interface ImageIdParams {
   StudyInstanceUID: string;
   SeriesInstanceUID: string;
   wadoRsRoot: string;
+}
+
+// Dynamic import function for Cornerstone 3D modules
+async function loadCornerstoneModules() {
+  if (typeof window === 'undefined') {
+    throw new Error('Cornerstone modules can only be loaded in browser environment');
+  }
+
+  const [coreModule, toolsModule] = await Promise.all([
+    import('@cornerstonejs/core'),
+    import('@cornerstonejs/tools')
+  ]);
+
+  return {
+    utilities: coreModule.utilities,
+    volumeLoader: coreModule.volumeLoader,
+    Enums: coreModule.Enums,
+    RenderingEngine: coreModule.RenderingEngine,
+    metaData: coreModule.metaData,
+    imageLoader: coreModule.imageLoader,
+    csUtils: coreModule.utilities,
+    csTools3d: toolsModule,
+    ToolGroupManager: toolsModule.ToolGroupManager,
+    BrushTool: toolsModule.BrushTool,
+    ToolEnums: toolsModule.Enums
+  };
 }
 
 /**
@@ -39,15 +60,16 @@ export default async function createImageIdsAndCacheMetaData({
   });
 
   // Get the series metadata
+  type InstanceMetadata = { SOPInstanceUID: string };
+
   const instances = await dicomWebClient.retrieveSeriesMetadata({
     studyInstanceUID: StudyInstanceUID,
     seriesInstanceUID: SeriesInstanceUID,
-  });
+  }) as InstanceMetadata[];
 
   // Create and return the imageIds
-  const imageIds = instances.map((instance: any) => {
-    const imageId = `wadors:${wadoRsRoot}/studies/${StudyInstanceUID}/series/${SeriesInstanceUID}/instances/${instance.SOPInstanceUID}/frames/1`;
-    return imageId;
+  const imageIds = instances.map(({ SOPInstanceUID }) => {
+    return `wadors:${wadoRsRoot}/studies/${StudyInstanceUID}/series/${SeriesInstanceUID}/instances/${SOPInstanceUID}/frames/1`;
   });
 
   return imageIds;
@@ -130,8 +152,16 @@ export async function createImageIdsFromLocalFiles(files: File[]): Promise<strin
 }
 
 // Initialize cornerstone tools - exported as a function to be called when needed
-export function initializeTools(): void {
+export async function initializeTools(): Promise<void> {
+  if (typeof window === 'undefined') {
+    console.warn('Cannot initialize tools on server side');
+    return;
+  }
+
   try {
+    const modules = await loadCornerstoneModules();
+    const { csTools3d, ToolGroupManager, BrushTool } = modules;
+
     // Tools registration
     const { PanTool, ProbeTool, ZoomTool, LengthTool } = csTools3d;
     csTools3d.addTool(PanTool);
@@ -139,7 +169,6 @@ export function initializeTools(): void {
     csTools3d.addTool(LengthTool);
     csTools3d.addTool(ProbeTool);
     csTools3d.addTool(BrushTool);
-    csTools3d.addTool(SegmentationDisplayTool);
 
     // Create tool group safely
     const toolGroupId = 'my-tool-group';
@@ -152,7 +181,6 @@ export function initializeTools(): void {
       toolGroup.addTool('Length');
       toolGroup.addTool('Probe');
       toolGroup.addTool('Brush');
-      toolGroup.addTool('SegmentationDisplay');
       
       // Set initial active tool
       toolGroup.setToolActive('Pan', {
@@ -169,10 +197,21 @@ export function initializeTools(): void {
 }
 
 // Helper function to create a volume from imageIds for segmentation
-export async function setupImageStack(element: HTMLElement, imageIds: string[]): Promise<void> {
+export async function setupImageStack(
+  element: HTMLElement, 
+  imageIds: string[],
+  // Optional: a specific volumeId if the caller wants to suggest one, useful for single images
+  // Otherwise, a default or derived one will be used.
+  preferredVolumeId?: string 
+): Promise<string | null> { // Return the actual volumeId created, or null if failed
+  if (typeof window === 'undefined') {
+    console.warn('Cannot setup image stack on server side');
+    return null;
+  }
+
   if (!element || !imageIds || imageIds.length === 0) {
     console.warn('Cannot setup image stack: missing element or imageIds');
-    return;
+    return null;
   }
   
   try {
@@ -199,78 +238,60 @@ export async function setupImageStack(element: HTMLElement, imageIds: string[]):
       }
     }
 
-    // Create a stack for cornerstoneTools
-    const stackId = `stack-${Date.now()}`;
+    const modules = await loadCornerstoneModules();
+    const { volumeLoader, imageLoader } = modules;
     
-    // Define the stack
-    const stack = {
-      imageIds: imageIds,
-      currentImageIdIndex: 0
-    };
+    const baseVolumeId = preferredVolumeId || 'defaultStackVolume';
+    let finalVolumeId: string | null = null;
 
-    // Create a more proper mapping for cornerstone tools
-    const toolsState = csTools3d as any;
-    
-    // Initialize state and stacks if needed
-    if (!toolsState.state) {
-      toolsState.state = {};
-    }
-    
-    if (!toolsState.state.stacks) {
-      toolsState.state.stacks = {};
-    }
-    
-    // Store stack in cornerstone tools state
-    toolsState.state.stacks[stackId] = stack;
-    
-    // Create a UUID for the element
-    const elementUuid = element.dataset.uuid || `element-${Date.now()}`;
-    element.dataset.uuid = elementUuid;
-    
-    // Set up stack registry if needed
-    if (!toolsState.state.stackRegistry) {
-      toolsState.state.stackRegistry = new Map();
-    }
-    
-    // Associate element with stack
-    toolsState.state.stackRegistry.set(elementUuid, stackId);
-    
-    console.log('Registered traditional stack for segmentation tools');
-    
-    // Try to use the volumeLoader API for compatible schemes
-    if (scheme && ['wadouri', 'wadors', 'dicomweb'].includes(scheme.toLowerCase())) {
+    // For series with multiple images, try to create a volume if possible
+    if (imageIds.length > 1 && scheme === 'wadouri') {
+      console.log(`Attempting to create volume for ${imageIds.length} images with scheme ${scheme}`);
+      finalVolumeId = `${baseVolumeId}-series-${Date.now()}`;
+      
       try {
-        // Create a unique volumeId with proper scheme prefix
-        const volumeId = `cornerstoneStreamingImageVolume:${Date.now()}`;
-        
-        // Create and cache the volume
-        await volumeLoader.createAndCacheVolume(volumeId, {
-          imageIds
+        // Define the volume in the volume loader
+        const volume = await volumeLoader.createAndCacheVolume(finalVolumeId, {
+          imageIds,
         });
         
-        // Add to segmentations module if available
-        if (csTools3d.segmentation) {
-          const segmentationId = `segmentation-${Date.now()}`;
-          
-          await csTools3d.segmentation.addSegmentations([{
-            segmentationId,
-            representation: {
-              type: ToolEnums.SegmentationRepresentations.Labelmap,
-              data: {
-                volumeId
-              }
-            }
-          }]);
-          
-          console.log('Successfully registered volume and segmentation');
-        }
-      } catch (volumeError) {
-        console.warn('Volume loader failed but traditional stack is available:', volumeError);
+        console.log(`Volume created successfully for multi-image stack: ${finalVolumeId}`, volume);
+        return finalVolumeId;
+      } catch (error) {
+        console.error(`Error creating volume for multi-image stack ${finalVolumeId}:`, error);
+        return null;
+      }
+    } else if (imageIds.length === 1 && (scheme === 'wadouri' || scheme === 'dicomfile')) {
+      const singleImageId = imageIds[0];
+      finalVolumeId = preferredVolumeId || `singleImageVolume-${singleImageId.substring(singleImageId.lastIndexOf('/') + 1)}`;
+      // Ensure the image is loaded before attempting to create a volume from it
+      try {
+        console.log(`Loading single image ${singleImageId} before creating volume ${finalVolumeId}`);
+        // Assuming loadAndCacheImage from cornerstoneInit handles the actual loading
+        // Here, we just ensure it's in cache for volume creation if that's how volumeLoader works
+        // For single images, often they are directly set to stack viewports.
+        // However, if we MUST create a volume for an ORTHOGRAPHIC viewport:
+        await imageLoader.loadAndCacheImage(singleImageId); // Make sure the image data is available
+        console.log(`Image ${singleImageId} loaded. Attempting to create volume ${finalVolumeId}.`);
+
+        const volume = await volumeLoader.createAndCacheVolume(finalVolumeId, {
+          imageIds, // Pass as an array even for one image
+        });
+        console.log(`Volume created successfully for single image: ${finalVolumeId}`, volume);
+        return finalVolumeId;
+      } catch (error) {
+        console.error(`Error creating volume for single image ${finalVolumeId} (ID: ${singleImageId}):`, error);
+        // It's possible that createAndCacheVolume is not ideal for single images for ORTHOGRAPHIC
+        // if it inherently expects multiple slices for some operations.
+        // Let's log the error and see. The image itself should be in cache.
+        return null; 
       }
     } else {
-      console.log('Using traditional stack approach for non-compatible scheme');
+      console.log(`No volume created by setupImageStack: ${imageIds.length} images, scheme: ${scheme}. Review DicomViewer logic for STACK viewports for single non-DICOM images.`);
+      return null;
     }
   } catch (error) {
-    console.error('Error setting up image stack:', error);
+    console.error('Error in setupImageStack:', error);
+    return null;
   }
 }

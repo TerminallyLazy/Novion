@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useDropzone, type DropzoneProps } from 'react-dropzone';
 import { Upload, X, FileImage, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -36,18 +36,40 @@ export function ImageSeriesUpload({
     }
   }, [onUploadComplete]);
 
-  const dropzoneOptions: DropzoneProps = {
-    onDrop,
-    maxFiles,
-    multiple: true,
-    accept: {
+  // Costruiamo dinamicamente il mapping "accept" partendo da acceptedFileTypes;
+  // se il consumer non specifica nulla manteniamo il default completo.
+  const acceptMapping = useMemo<Record<string, string[]>>(() => {
+    const defaultAccept: Record<string, string[]> = {
       'application/dicom': ['.dcm', '.DCM'],
       'image/dicom': ['.dcm', '.DCM'],
       'image/png': ['.png', '.PNG'],
       'application/nifti': ['.nii', '.nii.gz'],
-      'image/nifti': ['.nii', '.nii.gz'] 
-    },
-  
+      'image/nifti': ['.nii', '.nii.gz']
+    };
+
+    if (!acceptedFileTypes || acceptedFileTypes.length === 0) {
+      return defaultAccept;
+    }
+
+    const customAccept: Record<string, string[]> = {};
+
+    Object.entries(defaultAccept).forEach(([mime, extArr]) => {
+      const filtered = extArr.filter((ext) => acceptedFileTypes.includes(ext));
+      if (filtered.length) {
+        customAccept[mime] = filtered;
+      }
+    });
+
+    // Se nessuna corrispondenza, fallback al default
+    return Object.keys(customAccept).length ? customAccept : defaultAccept;
+  }, [acceptedFileTypes]);
+
+  const dropzoneOptions: DropzoneProps = {
+    onDrop,
+    maxFiles,
+    multiple: true,
+    accept: acceptMapping,
+
     onDragEnter: undefined,
     onDragOver: undefined,
     onDragLeave: undefined
@@ -62,6 +84,11 @@ export function ImageSeriesUpload({
     onUploadComplete(newFiles);
   };
 
+  // Calcoliamo lo stile della progress-bar in modo memoizzato, evitando inline literals.
+  const progressBarStyle = useMemo<React.CSSProperties>(() => ({
+    width: `${uploadProgress}%`,
+  }), [uploadProgress]);
+
   return (
     <div className="w-full space-y-4">
       <div
@@ -73,7 +100,7 @@ export function ImageSeriesUpload({
             : "border-[#2D3848] hover:border-[#4cedff]/50"
         )}
       >
-        <input {...(getInputProps() as any)} />
+        <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-2">
           <Upload className="h-8 w-8 text-[#4cedff]" />
           <p className="text-sm text-foreground/80">
@@ -96,9 +123,11 @@ export function ImageSeriesUpload({
             </span>
           </div>
           <div className="h-2 w-full bg-[#2D3848] rounded-full overflow-hidden">
+            
+            
             <div
               className="h-full bg-[#4cedff] transition-all duration-300"
-              style={{ width: `${uploadProgress}%` }}
+              style={progressBarStyle}
             />
           </div>
         </div>
@@ -127,6 +156,7 @@ export function ImageSeriesUpload({
                 <button
                   onClick={() => removeFile(index)}
                   className="p-1 hover:bg-[#2D3848] rounded-md text-foreground/60 hover:text-[#4cedff]"
+                  aria-label={`Remove ${file.name}`}
                 >
                   <X className="h-4 w-4" />
                 </button>

@@ -1,531 +1,739 @@
-import * as cornerstone from 'cornerstone-core';
-import * as cornerstoneTools from 'cornerstone-tools';
-import * as cornerstoneMath from 'cornerstone-math';
-import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
-import dicomParser from 'dicom-parser';
-import Hammer from 'hammerjs';
+/**
+ * Cornerstone 3D Initialization and Utilities
+ * Updated for Cornerstone3D v3.x - follows official examples and migration guide
+ * 
+ * Key changes in v3.x:
+ * - SharedArrayBuffer no longer required
+ * - GPU detection simplified (no internet dependency) 
+ * - CPU fallback automatically handled
+ * - Improved cache management
+ */
 
-// Add type declarations for cornerstone modules
-declare module 'cornerstone-core' {
-  export function registerImageLoader(scheme: string, loader: any): void;
-  export function loadImage(imageId: string): Promise<any>;
-  export function enable(element: HTMLElement): void;
-  export function disable(element: HTMLElement): void;
-  export function displayImage(element: HTMLElement, image: any): void;
-}
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-declare module 'cornerstone-wado-image-loader' {
-  export const wadouri: {
-    loadImage: (imageId: string) => Promise<any>;
-  };
-  export const wadors: {
-    loadImage: (imageId: string) => Promise<any>;
-  };
-  export const webWorkerManager: {
-    initialize: (config: any) => void;
-  };
-}
+import type { 
+  Types as CoreTypes,
+  Enums as CoreEnums,
+  CONSTANTS as CoreCONSTANTS_TYPENAME,
+  RenderingEngine as CoreRenderingEngineClass,
+  metaData as CoreMetaData,
+  imageLoader as CoreImageLoader,
+  utilities as CoreUtilities,
+} from '@cornerstonejs/core';
 
-let isInitialized = false;
+// Note: MouseBindings enum removed due to inconsistent export path in v3.x; numeric literal bindings used instead.
+import type { 
+  Types as ToolTypes_NAMESPACE, // Alias for the namespace type
+  Enums as ToolEnums,
+  ToolGroupManager as ToolGroupManagerClass, 
+  SynchronizerManager as SynchronizerManagerClass,
+  PanTool as PanToolClass_TYPENAME,
+  ZoomTool as ZoomToolClass_TYPENAME,
+  StackScrollTool as StackScrollToolClass_TYPENAME, 
+  WindowLevelTool as WindowLevelToolClass_TYPENAME,
+  LengthTool as LengthToolClass_TYPENAME,
+  ProbeTool as ProbeToolClass_TYPENAME,
+  RectangleROITool as RectangleROIToolClass_TYPENAME,
+  EllipticalROITool as EllipticalROIToolClass_TYPENAME,
+  BidirectionalTool as BidirectionalToolClass_TYPENAME,
+  AngleTool as AngleToolClass_TYPENAME,
+  BrushTool as BrushToolClass_TYPENAME, 
+  CircleScissorsTool as CircleScissorsToolClass_TYPENAME, 
+  RectangleScissorsTool as RectangleScissorsToolClass_TYPENAME 
+} from '@cornerstonejs/tools';
 
-export function initializeCornerstone() {
-  if (isInitialized) {
-    return;
-  }
-
-  // Initialize external dependencies
-  cornerstoneTools.external.cornerstone = cornerstone;
-  cornerstoneTools.external.cornerstoneMath = cornerstoneMath;
-  cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-  cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
-  cornerstoneTools.external.Hammer = Hammer;
-
-  // Configure cornerstone WADO image loader with minimal configuration
-  cornerstoneWADOImageLoader.configure({
-    beforeSend: (xhr: XMLHttpRequest) => {
-      // Add any headers or configurations needed for your WADO server
-    }
-  });
-
-  // Register the WADO image loader prefix
-  cornerstone.registerImageLoader('wadouri', cornerstoneWADOImageLoader.wadouri.loadImage);
-  cornerstone.registerImageLoader('dicomfile', cornerstoneWADOImageLoader.wadouri.loadImage);
-  cornerstone.registerImageLoader('dicomweb', cornerstoneWADOImageLoader.wadors.loadImage);
-  
-  // Register custom image loaders
-  cornerstone.registerImageLoader('pngimage', loadImageFromUrl);
-  cornerstone.registerImageLoader('direct', (imageId: string) => {
-    const url = imageId.replace('direct:', '');
-    const imageLoadObject: {
-      promise: Promise<any>;
-      cancelFn: () => void;
-    } = {
-      promise: loadDirectlyAsImage(url),
-      cancelFn: () => console.log('Cancel requested for direct image load:', imageId)
-    };
-    return imageLoadObject;
-  });
-
-  // Initialize tools
-  cornerstoneTools.init();
-
-  // Register manipulation tools - Fix tool names to match the actual properties in cornerstoneTools
-  try {
-    // Manipulation tools
-    cornerstoneTools.addTool(cornerstoneTools.PanTool);
-    cornerstoneTools.addTool(cornerstoneTools.ZoomTool);
-    cornerstoneTools.addTool(cornerstoneTools.WwwcTool); // Correct name for Window/Level tool
-
-    // Annotation tools
-    cornerstoneTools.addTool(cornerstoneTools.LengthTool);
-    cornerstoneTools.addTool(cornerstoneTools.AngleTool);
-    cornerstoneTools.addTool(cornerstoneTools.RectangleRoiTool);
-    
-    // Try to add Probe tool if it exists
-    if ('ProbeTool' in cornerstoneTools) {
-      cornerstoneTools.addTool(cornerstoneTools.ProbeTool);
-    } else if ('probe' in cornerstoneTools) {
-      // Fallback to older naming convention if available
-      cornerstoneTools.addTool(cornerstoneTools.probe);
-    }
-    
-    // Try to add Brush tool if it exists
-    if ('BrushTool' in cornerstoneTools) {
-      cornerstoneTools.addTool(cornerstoneTools.BrushTool);
-    } else if ('brush' in cornerstoneTools) {
-      // Fallback to older naming convention if available
-      cornerstoneTools.addTool(cornerstoneTools.brush);
-    }
-    
-    console.log('Successfully added tools to cornerstone');
-  } catch (error) {
-    console.error('Error registering tools:', error);
-  }
-
-  isInitialized = true;
-  console.log('Cornerstone initialized with all custom image loaders');
-}
-
-// Custom image loader for PNG images
-function loadImageFromUrl(imageId: string) {
-  // The URL is the imageId
-  const url = imageId.replace('pngimage:', '');
-  
-  const imageLoadObject: {
-    promise: Promise<any>;
-    cancelFn: () => void;
-  } = {
-    promise: null as any,
-    cancelFn: null as any
-  };
-  
-  imageLoadObject.promise = new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'Anonymous';
-    
-    image.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        reject(new Error('Could not get 2D context'));
-        return;
-      }
-      
-      ctx.drawImage(image, 0, 0);
-      
-      console.log('Custom loader: Image loaded successfully with dimensions:', image.width, 'x', image.height);
-      
-      // Get the image data
-      const imageData = ctx.getImageData(0, 0, image.width, image.height);
-      const pixelData = imageData.data;
-      
-      // Create a cornerstone-compatible image object with color support
-      const cornerstoneImage = {
-        imageId: imageId,
-        minPixelValue: 0,
-        maxPixelValue: 255,
-        slope: 1.0,
-        intercept: 0,
-        windowCenter: 128,
-        windowWidth: 255,
-        getPixelData: function() {
-          return pixelData;
-        },
-        getCanvas: function() {
-          return canvas;
-        },
-        rows: image.height,
-        columns: image.width,
-        height: image.height,
-        width: image.width,
-        color: true,
-        rgba: true,
-        sizeInBytes: image.width * image.height * 4, // 4 bytes per pixel (RGBA)
-        columnPixelSpacing: 1.0,
-        rowPixelSpacing: 1.0
-      };
-      
-      console.log('Custom loader: Successfully created color cornerstone image');
-      resolve(cornerstoneImage);
-    };
-    
-    image.onerror = function(e) {
-      console.error('Custom loader: Error loading image:', url, e);
-      reject(new Error('Could not load image: ' + e));
-    };
-    
-    image.src = url;
-  });
-  
-  imageLoadObject.cancelFn = () => {
-    // Not much we can do to cancel an image load
-    console.log('Cancel requested for image load:', imageId);
-  };
-  
-  return imageLoadObject;
-}
-
-export async function loadAndCacheImage(imageId: string) {
-  try {
-    // Ensure cornerstone is initialized
-    if (!isInitialized) {
-      initializeCornerstone();
-    }
-
-    console.log('Loading image with ID:', imageId); // Add debugging
-
-    // Check if this is already a pngimage: prefix
-    if (imageId.startsWith('pngimage:')) {
-      console.log('Using pre-formatted pngimage ID:', imageId);
-      return await cornerstone.loadImage(imageId);
-    }
-
-    // For regular PNG, JPG, etc. using blob URLs
-    if (imageId.startsWith('blob:')) {
-      // First check if we have a filename after # 
-      const parts = imageId.split('#');
-      const actualUrl = parts[0];
-      const filename = parts[1] || '';
-      
-      // Check if this is a PNG/JPG image using either the URL or the appended filename
-      const isPngOrJpg = 
-        filename.toLowerCase().endsWith('.png') || 
-        filename.toLowerCase().endsWith('.jpg') || 
-        filename.toLowerCase().endsWith('.jpeg') ||
-        imageId.toLowerCase().includes('.png') || 
-        imageId.toLowerCase().includes('.jpg') || 
-        imageId.toLowerCase().includes('.jpeg');
-      
-      if (isPngOrJpg) {
-        console.log('Loading standard image format using custom image loader:', actualUrl);
-        
-        // Use our custom image loader for PNG files
-        const pngImageId = `pngimage:${actualUrl}`;
-        try {
-          return await cornerstone.loadImage(pngImageId);
-        } catch (pngError) {
-          console.error('Error loading with pngimage handler, trying alternate method:', pngError);
-          // If that fails, try directly with the blob URL as a fallback
-          const image = await loadDirectlyAsImage(actualUrl);
-          return image;
-        }
-      }
-      // For DICOM files with blob URLs
-      else if (filename.toLowerCase().endsWith('.dcm') || 
-               !filename.toLowerCase().match(/\.(png|jpg|jpeg|gif)$/)) {
-        // For blob URLs, directly use the dicomfile prefix
-        const cornerstoneImageId = `dicomfile:${actualUrl}`;
-        console.log('Converted to cornerstone ID for DICOM:', cornerstoneImageId);
-        return await cornerstone.loadImage(cornerstoneImageId);
-      } 
-      // For NIFTI files
-      else if (filename.toLowerCase().endsWith('.nii') || 
-               filename.toLowerCase().endsWith('.nii.gz')) {
-        console.log('Detected NIFTI file, using special handler');
-        // For NIFTI files we need special handling
-        // This is a placeholder - you'll need to implement NIFTI support
-        const cornerstoneImageId = `dicomfile:${actualUrl}`;
-        return await cornerstone.loadImage(cornerstoneImageId);
-      }
-    }
-    // For URLs starting with 'file:'
-    else if (imageId.startsWith('file:')) {
-      // Extract the blob URL
-      const blobUrl = imageId.replace('file:', '');
-      // Create a new imageId with the dicomfile prefix
-      const cornerstoneImageId = `dicomfile:${blobUrl}`;
-      console.log('Converted file: to cornerstone ID:', cornerstoneImageId);
-      return await cornerstone.loadImage(cornerstoneImageId);
-    } 
-    // For remote URLs (WADO/DICOMweb)
-    else if (imageId.startsWith('http')) {
-      const wadoImageId = `wadouri:${imageId}`;
-      console.log('Converted http: to cornerstone ID:', wadoImageId);
-      return await cornerstone.loadImage(wadoImageId);
-    }
-    // If already prefixed with wadouri or dicomfile, use as is
-    else if (imageId.startsWith('wadouri:') || imageId.startsWith('dicomfile:')) {
-      console.log('Using pre-formatted cornerstone ID:', imageId);
-      return await cornerstone.loadImage(imageId);
-    }
-    // Default case: assume it's a local file path and try both formats
-    else {
-      console.log('Trying default formats for ID:', imageId);
-      try {
-        return await cornerstone.loadImage(`dicomfile:${imageId}`);
-      } catch (e) {
-        console.log('Fallback to wadouri format');
-        return await cornerstone.loadImage(`wadouri:${imageId}`);
-      }
-    }
-  } catch (error) {
-    console.error('Error loading image:', error);
-    throw error;
-  }
-}
-
-// Helper function to load an image directly as a fallback
-async function loadDirectlyAsImage(url: string) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'Anonymous';
-    
-    image.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        reject(new Error('Could not get 2D context'));
-        return;
-      }
-      
-      ctx.drawImage(image, 0, 0);
-      console.log('Direct loader: Image loaded with dimensions:', image.width, 'x', image.height);
-      
-      // Get the image data
-      const imageData = ctx.getImageData(0, 0, image.width, image.height);
-      const pixelData = imageData.data;
-      
-      // Create a cornerstone-compatible image object with color support
-      const cornerstoneImage = {
-        imageId: `direct:${url}`,
-        minPixelValue: 0,
-        maxPixelValue: 255,
-        slope: 1.0,
-        intercept: 0,
-        windowCenter: 128,
-        windowWidth: 255,
-        getPixelData: function() {
-          return pixelData;
-        },
-        getCanvas: function() {
-          return canvas;
-        },
-        rows: image.height,
-        columns: image.width,
-        height: image.height,
-        width: image.width,
-        color: true,
-        rgba: true,
-        sizeInBytes: image.width * image.height * 4, // 4 bytes per pixel (RGBA)
-        columnPixelSpacing: 1.0,
-        rowPixelSpacing: 1.0
-      };
-      
-      console.log('Direct loader: Successfully created image object');
-      resolve(cornerstoneImage);
-    };
-    
-    image.onerror = function(e) {
-      console.error('Direct loader: Error loading image:', url, e);
-      reject(new Error('Could not load image directly: ' + e));
-    };
-    
-    image.src = url;
-  });
-}
-
-export function displayImage(element: HTMLElement, image: any) {
-  try {
-    return cornerstone.displayImage(element, image);
-  } catch (error) {
-    console.error('Error displaying image:', error);
-    throw error;
-  }
-}
-
-export function enableElement(element: HTMLElement) {
-  try {
-    cornerstone.enable(element);
-    
-    // Add tools to the enabled element using a more direct approach for TypeScript
-    try {
-      // Get the Cornerstone Tools module as any to bypass TypeScript checks
-      const cornerstoneToolsAny = cornerstoneTools as any;
-      
-      // Check if addToolForElement exists
-      if (typeof cornerstoneToolsAny.addToolForElement === 'function') {
-        console.log('Using addToolForElement to add tools to the element');
-        
-        // Add manipulation tools
-        if (cornerstoneToolsAny.PanTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.PanTool);
-        if (cornerstoneToolsAny.ZoomTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.ZoomTool);
-        if (cornerstoneToolsAny.WwwcTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.WwwcTool);
-        
-        // Add annotation tools
-        if (cornerstoneToolsAny.LengthTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.LengthTool);
-        if (cornerstoneToolsAny.AngleTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.AngleTool);
-        if (cornerstoneToolsAny.RectangleRoiTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.RectangleRoiTool);
-        
-        // Try to add Probe tool if it exists
-        if (cornerstoneToolsAny.ProbeTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.ProbeTool);
-        else if (cornerstoneToolsAny.probe) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.probe);
-        
-        // Try to add Brush tool if it exists
-        if (cornerstoneToolsAny.BrushTool) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.BrushTool);
-        else if (cornerstoneToolsAny.brush) cornerstoneToolsAny.addToolForElement(element, cornerstoneToolsAny.brush);
-      } else {
-        console.warn('addToolForElement function not found in cornerstoneTools, using alternate approach');
-        
-        // Alternative approach: Try using tool-specific add functions
-        // Note: This is for older versions of cornerstone-tools
-        if (cornerstoneToolsAny.panTool && cornerstoneToolsAny.panTool.addTool) 
-          cornerstoneToolsAny.panTool.addTool(element);
-        if (cornerstoneToolsAny.zoomTool && cornerstoneToolsAny.zoomTool.addTool) 
-          cornerstoneToolsAny.zoomTool.addTool(element);
-        if (cornerstoneToolsAny.wwwcTool && cornerstoneToolsAny.wwwcTool.addTool) 
-          cornerstoneToolsAny.wwwcTool.addTool(element);
-        if (cornerstoneToolsAny.lengthTool && cornerstoneToolsAny.lengthTool.addTool) 
-          cornerstoneToolsAny.lengthTool.addTool(element);
-        if (cornerstoneToolsAny.angleTool && cornerstoneToolsAny.angleTool.addTool) 
-          cornerstoneToolsAny.angleTool.addTool(element);
-        if (cornerstoneToolsAny.rectangleRoiTool && cornerstoneToolsAny.rectangleRoiTool.addTool) 
-          cornerstoneToolsAny.rectangleRoiTool.addTool(element);
-      }
-      
-      console.log('Successfully added tools to enabled element');
-    } catch (toolError) {
-      console.error('Error adding tools to element:', toolError);
-    }
-    
-    return element;
-  } catch (error) {
-    console.error('Error enabling element:', error);
-    throw error;
-  }
-}
-
-export function disableElement(element: HTMLElement) {
-  try {
-    return cornerstone.disable(element);
-  } catch (error) {
-    console.error('Error disabling element:', error);
-    throw error;
-  }
-}
-
-// Add a type for the tools in our UI
-export type UiToolType =
-  | "pan"
-  | "zoom"
-  | "distance"
-  | "area"
-  | "angle"
-  | "profile"
-  | "window"
-  | "level"
-  | "diagnose"
-  | "statistics"
-  | "segment"
-  | "compare"
+// UI Tool mapping types for consistency
+export type UiToolType = 
+  | 'Pan' | 'Zoom' | 'WindowLevel' | 'StackScroll' 
+  | 'Length' | 'Probe' | 'RectangleROI' | 'EllipticalROI'
+  | 'Bidirectional' | 'Angle'
+  | 'Brush' | 'SphereBrush' 
+  | 'CircleScissor' | 'RectangleScissor'
   | null;
 
-// The existing function for Cornerstone 2D tools
-export function setActiveTools(toolName: string, options: any = { mouseButtonMask: 1 }) {
-  try {
-    console.log(`Setting ${toolName} tool active with options:`, options);
-    
-    // Use any type to bypass TypeScript checks
-    const cornerstoneToolsAny = cornerstoneTools as any;
-    
-    // First deactivate all tools
-    const toolsToDeactivate = [
-      'Pan', 'Zoom', 'Wwwc', 'Length', 'RectangleRoi', 'Angle', 'Probe', 'Brush'
-    ];
-    
-    // Deactivate all tools first
-    for (const tool of toolsToDeactivate) {
-      try {
-        cornerstoneToolsAny.setToolActive(tool, { mouseButtonMask: 0 });
-      } catch (e) {
-        // Ignore errors for tools that might not be registered
-      }
-    }
+interface CornerstoneModulesType {
+  csCoreResolved?: any; // Contiene csCoreModule.default o csCoreModule
+  csToolsResolved?: any; // Contiene csToolsModule.default o csToolsModule
+  csDicomImageLoaderResolved?: any;
 
-    // Activate the selected tool
-    try {
-      cornerstoneToolsAny.setToolActive(toolName, options);
-    } catch (activateError) {
-      console.error(`Error activating tool ${toolName}:`, activateError);
-      
-      // Fall back to using the Pan tool
-      try {
-        console.warn(`Falling back to Pan tool`);
-        cornerstoneToolsAny.setToolActive('Pan', { mouseButtonMask: 1 });
-      } catch (fallbackError) {
-        console.error('Error activating fallback Pan tool:', fallbackError);
-      }
-    }
+  // Tipi dei namespace/oggetti specifici per type hinting
+  CoreTypes?: typeof CoreTypes;
+  CoreEnums?: typeof CoreEnums;
+  CoreCONSTANTS?: typeof CoreCONSTANTS_TYPENAME;
+  CoreRenderingEngineClass?: typeof CoreRenderingEngineClass;
+  CoreMetaData?: typeof CoreMetaData;
+  CoreImageLoader?: typeof CoreImageLoader;
+  CoreVolumeLoader?: any;
+  CoreUtilities?: typeof CoreUtilities;
+  CoreCache?: any;
+  getRenderingEngine?: typeof import('@cornerstonejs/core').getRenderingEngine; // Funzione
+
+  ToolTypes?: typeof ToolTypes_NAMESPACE; // Use the aliased namespace type
+  ToolEnums?: typeof ToolEnums;
+  ToolGroupManagerClass?: typeof ToolGroupManagerClass;
+  SynchronizerManagerClass?: typeof SynchronizerManagerClass;
+
+  // Campi per le classi dei Tool specifici
+  PanToolClass?: typeof PanToolClass_TYPENAME;
+  ZoomToolClass?: typeof ZoomToolClass_TYPENAME;
+  StackScrollToolClass?: typeof StackScrollToolClass_TYPENAME;
+  WindowLevelToolClass?: typeof WindowLevelToolClass_TYPENAME;
+  LengthToolClass?: typeof LengthToolClass_TYPENAME;
+  ProbeToolClass?: typeof ProbeToolClass_TYPENAME;
+  RectangleROIToolClass?: typeof RectangleROIToolClass_TYPENAME;
+  EllipticalROIToolClass?: typeof EllipticalROIToolClass_TYPENAME;
+  BidirectionalToolClass?: typeof BidirectionalToolClass_TYPENAME;
+  AngleToolClass?: typeof AngleToolClass_TYPENAME;
+  BrushToolClass?: typeof BrushToolClass_TYPENAME;
+  CircleScissorsToolClass?: typeof CircleScissorsToolClass_TYPENAME;
+  RectangleScissorsToolClass?: typeof RectangleScissorsToolClass_TYPENAME;
+}
+
+interface GlobalCornerstoneState {
+  isInitializing: boolean;
+  isInitializedCore: boolean;
+  isInitializedTools: boolean;
+  modulesLoaded: boolean;
+  initializationPromise?: Promise<void>; // ensures callers can await full init
+  renderingEngine: CoreTypes.IRenderingEngine | null;
+  toolGroup: ToolTypes_NAMESPACE.IToolGroup | null; // Use aliased namespace for IToolGroup
+}
+
+let cornerstoneModules: CornerstoneModulesType | undefined;
+
+function getGlobalCornerstoneState(): GlobalCornerstoneState {
+  if (!(globalThis as any).__cornerstoneGlobalState) {
+    (globalThis as any).__cornerstoneGlobalState = {
+      isInitializing: false,
+      isInitializedCore: false,
+      isInitializedTools: false,
+      modulesLoaded: false,
+      renderingEngine: null,
+      toolGroup: null,
+    };
+  }
+  return (globalThis as any).__cornerstoneGlobalState;
+}
+
+async function loadCornerstoneModules(): Promise<CornerstoneModulesType> {
+  if (typeof window === 'undefined') {
+    console.warn('Cornerstone modules can only be loaded in browser environment. Returning placeholders.');
+    // Return a fully populated placeholder to satisfy the type, actual values are undefined
+    return {
+        csCoreResolved: undefined, csToolsResolved: undefined, csDicomImageLoaderResolved: undefined,
+        CoreTypes: undefined, CoreEnums: undefined, CoreCONSTANTS: undefined,
+        CoreRenderingEngineClass: undefined, CoreMetaData: undefined, CoreImageLoader: undefined,
+        CoreVolumeLoader: undefined, CoreUtilities: undefined, CoreCache: undefined,
+        getRenderingEngine: (() => undefined) as any,
+        ToolTypes: undefined, ToolEnums: undefined, ToolGroupManagerClass: undefined,
+        SynchronizerManagerClass: undefined, PanToolClass: undefined, ZoomToolClass: undefined,
+        StackScrollToolClass: undefined, WindowLevelToolClass: undefined, LengthToolClass: undefined,
+        ProbeToolClass: undefined, RectangleROIToolClass: undefined, EllipticalROIToolClass: undefined,
+        BidirectionalToolClass: undefined, AngleToolClass: undefined, BrushToolClass: undefined,
+        CircleScissorsToolClass: undefined, RectangleScissorsToolClass: undefined,
+      } as CornerstoneModulesType;
+  }
+
+  const globalState = getGlobalCornerstoneState();
+  if (globalState.modulesLoaded && cornerstoneModules) {
+    return cornerstoneModules;
+  }
+
+  console.log('Loading Cornerstone 3D modules dynamically...');
+  try {
+    const [
+      csCoreModuleResponse,
+      csToolsModuleResponse,
+      csDicomImageLoaderModuleResponse,
+    ] = await Promise.all([
+      import('@cornerstonejs/core'),
+      import('@cornerstonejs/tools'),
+      import('@cornerstonejs/dicom-image-loader'),
+    ]);
+
+    const csCoreResolved = csCoreModuleResponse.default || csCoreModuleResponse;
+    const csToolsResolved = csToolsModuleResponse.default || csToolsModuleResponse;
+    const csDicomImageLoaderResolved = csDicomImageLoaderModuleResponse.default || csDicomImageLoaderModuleResponse;
+
+    const modulesResult: CornerstoneModulesType = {
+      csCoreResolved,
+      csToolsResolved,
+      csDicomImageLoaderResolved,
+
+      CoreTypes: (csCoreResolved as any).Types as typeof CoreTypes, 
+      CoreEnums: (csCoreResolved as any).Enums as typeof CoreEnums,
+      CoreCONSTANTS: (csCoreResolved as any).CONSTANTS as typeof CoreCONSTANTS_TYPENAME,
+      CoreRenderingEngineClass: (csCoreResolved as any).RenderingEngine as typeof CoreRenderingEngineClass,
+      CoreMetaData: (csCoreResolved as any).metaData as typeof CoreMetaData,
+      CoreImageLoader: (csCoreResolved as any).imageLoader as typeof CoreImageLoader,
+      CoreVolumeLoader: (csCoreResolved as any).volumeLoader as any,
+      CoreUtilities: (csCoreResolved as any).utilities as typeof CoreUtilities,
+      CoreCache: (csCoreResolved as any).cache as any,
+      getRenderingEngine: (csCoreResolved as any).getRenderingEngine as typeof import('@cornerstonejs/core').getRenderingEngine,
+
+      ToolTypes: (csToolsResolved as any).Types as typeof ToolTypes_NAMESPACE,
+      ToolEnums: (csToolsResolved as any).Enums as typeof ToolEnums,
+      ToolGroupManagerClass: (csToolsResolved as any).ToolGroupManager as typeof ToolGroupManagerClass,
+      SynchronizerManagerClass: (csToolsResolved as any).SynchronizerManager as typeof SynchronizerManagerClass,
+
+      // Assegna le classi dei Tool specifici
+      PanToolClass: (csToolsResolved as any).PanTool as typeof PanToolClass_TYPENAME,
+      ZoomToolClass: (csToolsResolved as any).ZoomTool as typeof ZoomToolClass_TYPENAME,
+      StackScrollToolClass: (csToolsResolved as any).StackScrollTool as typeof StackScrollToolClass_TYPENAME,
+      WindowLevelToolClass: (csToolsResolved as any).WindowLevelTool as typeof WindowLevelToolClass_TYPENAME,
+      LengthToolClass: (csToolsResolved as any).LengthTool as typeof LengthToolClass_TYPENAME,
+      ProbeToolClass: (csToolsResolved as any).ProbeTool as typeof ProbeToolClass_TYPENAME,
+      RectangleROIToolClass: (csToolsResolved as any).RectangleROITool as typeof RectangleROIToolClass_TYPENAME,
+      EllipticalROIToolClass: (csToolsResolved as any).EllipticalROITool as typeof EllipticalROIToolClass_TYPENAME,
+      BidirectionalToolClass: (csToolsResolved as any).BidirectionalTool as typeof BidirectionalToolClass_TYPENAME,
+      AngleToolClass: (csToolsResolved as any).AngleTool as typeof AngleToolClass_TYPENAME,
+      BrushToolClass: (csToolsResolved as any).BrushTool as typeof BrushToolClass_TYPENAME,
+      CircleScissorsToolClass: (csToolsResolved as any).CircleScissorsTool as typeof CircleScissorsToolClass_TYPENAME,
+      RectangleScissorsToolClass: (csToolsResolved as any).RectangleScissorsTool as typeof RectangleScissorsToolClass_TYPENAME,
+    };
+
+    cornerstoneModules = modulesResult;
+    globalState.modulesLoaded = true;
+    
+    console.log('✅ Cornerstone 3D modules loaded successfully');
+    
+    return modulesResult;
   } catch (error) {
-    console.error(`Error in setActiveTools function:`, error);
+    console.error('❌ Failed to load Cornerstone 3D modules:', error);
+    throw new Error('Failed to load required Cornerstone3D modules');
   }
 }
 
 /**
- * Maps a UI tool type to the corresponding Cornerstone tool name(s)
- * This function can be used by both 2D and 3D viewers to determine which tool to activate
- * @param tool The UI tool type
- * @returns An object with tool names for both Cornerstone 2D and 3D
+ * Initialize Cornerstone 3D with v3.x compatible configuration
+ * Now much simpler - no SharedArrayBuffer, automatic GPU detection
  */
-export function mapUiToolToCornerstone(tool: UiToolType): { cornerstone2D: string, cornerstone3D: string } {
-  switch (tool) {
-    case "pan":
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
-    case "zoom":
-      return { cornerstone2D: "Zoom", cornerstone3D: "Zoom" };
-    case "window":
-    case "level":
-      return { cornerstone2D: "Wwwc", cornerstone3D: "WindowLevel" };
-    case "distance":
-      return { cornerstone2D: "Length", cornerstone3D: "Length" };
-    case "area":
-      return { cornerstone2D: "RectangleRoi", cornerstone3D: "RectangleROI" };
-    case "angle":
-      return { cornerstone2D: "Angle", cornerstone3D: "Angle" };
-    case "profile":
-      return { cornerstone2D: "Probe", cornerstone3D: "Probe" };
-    case "segment":
-      return { cornerstone2D: "Brush", cornerstone3D: "SphereBrush" };
-    // Only fall back to Pan for specific tools that we need to handle differently
-    case "diagnose":
-      console.log('Diagnose tool selected - falling back to Pan in 2D viewer');
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
-    case "statistics":
-      console.log('Statistics tool selected - falling back to Pan in 2D viewer');
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
-    case "compare":
-      console.log('Compare tool selected - falling back to Pan in 2D viewer');
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
-    case null:
-      console.log('No tool selected - defaulting to Pan');
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
-    default:
-      console.warn(`Unknown tool type: ${tool} - defaulting to Pan`);
-      return { cornerstone2D: "Pan", cornerstone3D: "Pan" };
+export async function initializeCornerstone3D(): Promise<void> {
+  if (typeof window === 'undefined') {
+    console.log('Skipping Cornerstone 3D initialization on server side');
+    return;
   }
+
+  const globalState = getGlobalCornerstoneState();
+
+  if (globalState.isInitializedCore && globalState.isInitializedTools) {
+    console.log('Cornerstone 3D already fully initialized (global state).');
+    return;
+  }
+
+  if (globalState.isInitializing) {
+    // Another call is already initializing; simply await the stored promise
+    console.log('Cornerstone 3D initialization already in progress – awaiting.');
+    if (globalState.initializationPromise) {
+      await globalState.initializationPromise;
+    }
+    return;
+  }
+
+  console.log('Initializing Cornerstone 3D (v3.x compatible)...');
+  globalState.isInitializing = true;
+
+  // Store the promise so concurrent callers can await
+  globalState.initializationPromise = (async () => {
+    try {
+      const modules = await loadCornerstoneModules();
+      // Ensure all crucial modules and their properties are loaded
+      if (!modules.csCoreResolved || !modules.csToolsResolved || 
+          !modules.CoreEnums || !modules.ToolGroupManagerClass || !modules.CoreCONSTANTS ||
+          !modules.CoreRenderingEngineClass || !modules.getRenderingEngine || !modules.ToolEnums || !modules.ToolTypes ||
+          !modules.PanToolClass || !modules.ZoomToolClass || !modules.StackScrollToolClass || 
+          !modules.WindowLevelToolClass || !modules.BrushToolClass) { 
+        throw new Error('Failed to load critical Cornerstone 3D modules/objects or their properties for initialization.');
+      }
+
+      // Destructure necessary classes and objects from modules
+      const { 
+        csCoreResolved, 
+        csToolsResolved, 
+        ToolGroupManagerClass: ToolGroupManager, 
+        // CoreCONSTANTS and ToolTypes will be accessed via modules.CoreCONSTANTS and modules.ToolTypes
+        CoreRenderingEngineClass: RenderingEngine, 
+        getRenderingEngine, 
+        PanToolClass, ZoomToolClass, StackScrollToolClass, WindowLevelToolClass, LengthToolClass, 
+        ProbeToolClass, RectangleROIToolClass, EllipticalROIToolClass, BidirectionalToolClass, AngleToolClass,
+        BrushToolClass
+      } = modules;
+
+      if (!globalState.isInitializedCore) {
+        console.log('Initializing Cornerstone 3D Core...');
+        const cornerstoneConfig = {};
+        csCoreResolved.init(cornerstoneConfig);
+        globalState.isInitializedCore = true;
+        console.log('✅ Cornerstone 3D Core initialized');
+      }
+
+      if (!globalState.isInitializedTools) {
+        console.log('Initializing Cornerstone 3D Tools...');
+        csToolsResolved.init();
+        globalState.isInitializedTools = true;
+        console.log('✅ Cornerstone 3D Tools initialized');
+      }
+      
+      if (!globalState.renderingEngine) {
+          const re = getRenderingEngine(DEFAULT_RENDERING_ENGINE_ID);
+          if (re) {
+              globalState.renderingEngine = re;
+          } else {
+              globalState.renderingEngine = new RenderingEngine(DEFAULT_RENDERING_ENGINE_ID);
+          }
+      }
+      
+      if (ToolGroupManager && !globalState.toolGroup) {
+          const defaultToolGroupId = 'default-tool-group';
+          let toolGroup : ToolTypes_NAMESPACE.IToolGroup | undefined = ToolGroupManager.getToolGroup(defaultToolGroupId);
+          if (!toolGroup) {
+              toolGroup = ToolGroupManager.createToolGroup(defaultToolGroupId) as ToolTypes_NAMESPACE.IToolGroup;
+          }
+          if (toolGroup) {
+              globalState.toolGroup = toolGroup;
+              if (toolGroup && Object.keys((toolGroup as any).getToolInstances?.() ?? {}).length === 0) {
+                  const toolsToAdd = [
+                      PanToolClass, ZoomToolClass, StackScrollToolClass, WindowLevelToolClass, LengthToolClass, 
+                      ProbeToolClass, RectangleROIToolClass, EllipticalROIToolClass, BidirectionalToolClass, AngleToolClass,
+                      BrushToolClass 
+                  ];
+
+                  toolsToAdd.forEach(ToolClassToAdd => {
+                      if (ToolClassToAdd && ToolClassToAdd.toolName) {
+                          csToolsResolved.addTool(ToolClassToAdd); 
+                          toolGroup!.addTool(ToolClassToAdd.toolName);
+                      }
+                  });
+                  
+                  // NEW ➜ Activate navigation tools once with fallback bindings
+                  try {
+                    const secondaryBtn = modules.ToolEnums?.MouseBindings?.Secondary ?? 2;
+                    const wheelBtn = modules.ToolEnums?.MouseBindings?.Wheel;
+                    if (PanToolClass?.toolName) {
+                      toolGroup.setToolActive(PanToolClass.toolName, {
+                        bindings: [{ mouseButton: secondaryBtn }],
+                      });
+                    }
+                    if (ZoomToolClass?.toolName) {
+                      toolGroup.setToolActive(ZoomToolClass.toolName, {
+                        bindings: [{ mouseButton: wheelBtn }],
+                      });
+                      // Disable implicit pan when zooming via wheel
+                      toolGroup.setToolConfiguration?.(ZoomToolClass.toolName, { pan: false }, true);
+                    }
+                  } catch (err) {
+                    console.warn('⚠️ Unable to set default Pan/Zoom bindings:', err);
+                  }
+              }
+          }
+      }
+
+      console.log('🎉 Cornerstone 3D initialization complete (v3.x)!');
+    } catch (_error: any) { 
+      console.error('❌ Cornerstone 3D initialization failed:', _error);
+      throw new Error(`Cornerstone 3D initialization failed: ${(_error as Error).message}`);
+    } finally {
+      globalState.isInitializing = false;
+    }
+  })();
+
+  await globalState.initializationPromise;
+  return;
+}
+
+/**
+ * Get the singleton RenderingEngine instance
+ */
+export async function getRenderingEngineInstance(renderingEngineId: string = DEFAULT_RENDERING_ENGINE_ID): Promise<CoreTypes.IRenderingEngine> {
+  const globalState = getGlobalCornerstoneState();
+  
+  if (globalState.renderingEngine && globalState.renderingEngine.id === renderingEngineId) {
+    return globalState.renderingEngine;
+  }
+  
+  await initializeCornerstone3D(); 
+  const modules = cornerstoneModules; 
+
+  if (!modules || !modules.getRenderingEngine || !modules.CoreRenderingEngineClass) {
+    throw new Error('Cornerstone Core modules not available to get RenderingEngine or RENDERING_ENGINE_UID is missing.');
+  }
+
+  let renderingEngine = modules.getRenderingEngine(renderingEngineId);
+  if (!renderingEngine) {
+    renderingEngine = new modules.CoreRenderingEngineClass(renderingEngineId);
+    if (renderingEngineId === DEFAULT_RENDERING_ENGINE_ID) {
+        globalState.renderingEngine = renderingEngine; 
+    }
+  }
+  return renderingEngine;
+}
+
+/**
+ * Get Cornerstone volumeLoader module (v3.x)
+ */
+export async function getVolumeLoader(): Promise<any> {
+  await initializeCornerstone3D();
+  const modules = cornerstoneModules;
+  if (!modules?.CoreVolumeLoader) {
+    throw new Error('Cornerstone volumeLoader module not available.');
+  }
+  return modules.CoreVolumeLoader;
+}
+
+/**
+ * Get Cornerstone cache module (v3.x)
+ */
+export async function getCache(): Promise<any> {
+  await initializeCornerstone3D();
+  const modules = cornerstoneModules;
+  if (!modules?.CoreCache) {
+    throw new Error('Cornerstone cache module not available.');
+  }
+  return modules.CoreCache;
+}
+
+/**
+ * Create tool group with v3.x compatible API
+ */
+export async function createToolGroup(toolGroupId: string): Promise<ToolTypes_NAMESPACE.IToolGroup> {
+  await initializeCornerstone3D(); 
+  const modules = cornerstoneModules;
+
+  if (!modules || !modules.ToolGroupManagerClass) {
+    throw new Error('Cornerstone ToolGroupManagerClass not available.');
+  }
+  
+  let toolGroup = modules.ToolGroupManagerClass.getToolGroup(toolGroupId);
+  if (!toolGroup) {
+    toolGroup = modules.ToolGroupManagerClass.createToolGroup(toolGroupId);
+
+    // Populate the toolGroup with the standard tool set once, immediately after creation
+    if (toolGroup) {
+      const {
+        PanToolClass,
+        ZoomToolClass,
+        StackScrollToolClass,
+        WindowLevelToolClass,
+        LengthToolClass,
+        ProbeToolClass,
+        RectangleROIToolClass,
+        EllipticalROIToolClass,
+        BidirectionalToolClass,
+        AngleToolClass,
+        BrushToolClass,
+        CircleScissorsToolClass,
+        RectangleScissorsToolClass,
+        csToolsResolved,
+      } = modules as any;
+
+      const toolClasses = [
+        PanToolClass,
+        ZoomToolClass,
+        StackScrollToolClass,
+        WindowLevelToolClass,
+        LengthToolClass,
+        ProbeToolClass,
+        RectangleROIToolClass,
+        EllipticalROIToolClass,
+        BidirectionalToolClass,
+        AngleToolClass,
+        BrushToolClass,
+        CircleScissorsToolClass,
+        RectangleScissorsToolClass,
+      ].filter(Boolean);
+
+      toolClasses.forEach((ToolClass: any) => {
+        try {
+          if (!ToolClass?.toolName) return;
+          // Register globally if not already present
+          if (typeof csToolsResolved?.addTool === 'function') {
+            csToolsResolved.addTool(ToolClass);
+          }
+          // Add to the newly created tool group
+          if (!((toolGroup as any).hasTool?.(ToolClass.toolName))) {
+            toolGroup!.addTool(ToolClass.toolName);
+          }
+        } catch (err) {
+          console.warn(`⚠️  Unable to register or add tool '${ToolClass?.toolName}' to group '${toolGroupId}':`, err);
+        }
+      });
+
+      // NEW ➜ Activate navigation tools once with fallback bindings
+      try {
+        const secondaryBtn = modules.ToolEnums?.MouseBindings?.Secondary ?? 2;
+        const wheelBtn = modules.ToolEnums?.MouseBindings?.Wheel;
+        if (PanToolClass?.toolName) {
+          toolGroup.setToolActive(PanToolClass.toolName, {
+            bindings: [{ mouseButton: secondaryBtn }],
+          });
+        }
+        if (ZoomToolClass?.toolName) {
+          toolGroup.setToolActive(ZoomToolClass.toolName, {
+            bindings: [{ mouseButton: wheelBtn }],
+          });
+          // Disable implicit pan when zooming via wheel
+          toolGroup.setToolConfiguration?.(ZoomToolClass.toolName, { pan: false }, true);
+        }
+      } catch (err) {
+        console.warn('⚠️ Unable to set default Pan/Zoom bindings:', err);
+      }
+    }
+  }
+  if (!toolGroup) { 
+      throw new Error(`Failed to create or get tool group: ${toolGroupId}`);
+  }
+  return toolGroup as ToolTypes_NAMESPACE.IToolGroup; // Cast esplicito
+}
+
+/**
+ * Map UI tool names to Cornerstone 3D tool names
+ */
+export async function mapUiToolToCornerstone3D(uiTool: UiToolType): Promise<string | null> {
+    if (!uiTool) return null;
+
+    await initializeCornerstone3D();
+    const modules = cornerstoneModules;
+    if (!modules || !modules.csToolsResolved || 
+        !modules.PanToolClass || !modules.ZoomToolClass || !modules.StackScrollToolClass || 
+        !modules.WindowLevelToolClass || !modules.LengthToolClass || !modules.ProbeToolClass || 
+        !modules.RectangleROIToolClass || !modules.EllipticalROIToolClass || !modules.BidirectionalToolClass || 
+        !modules.AngleToolClass || !modules.BrushToolClass || 
+        !modules.CircleScissorsToolClass || !modules.RectangleScissorsToolClass
+    ) { 
+        console.warn("Cornerstone tools module or specific tool classes not loaded for tool mapping.");
+        return uiTool; 
+    }
+
+    switch(uiTool) {
+        case 'Pan': return modules.PanToolClass.toolName;
+        case 'Zoom': return modules.ZoomToolClass.toolName;
+        case 'WindowLevel': return modules.WindowLevelToolClass.toolName;
+        case 'StackScroll': return modules.StackScrollToolClass.toolName;
+        case 'Length': return modules.LengthToolClass.toolName;
+        case 'Probe': return modules.ProbeToolClass.toolName;
+        case 'RectangleROI': return modules.RectangleROIToolClass.toolName;
+        case 'EllipticalROI': return modules.EllipticalROIToolClass.toolName;
+        case 'Bidirectional': return modules.BidirectionalToolClass.toolName;
+        case 'Angle': return modules.AngleToolClass.toolName;
+        case 'Brush': return modules.BrushToolClass.toolName; 
+        case 'SphereBrush': return modules.BrushToolClass.toolName; 
+        case 'CircleScissor': return modules.CircleScissorsToolClass.toolName;
+        case 'RectangleScissor': return modules.RectangleScissorsToolClass.toolName;
+        default:
+            console.warn(`No specific Cornerstone 3D tool mapping for UI tool: ${uiTool}. Using name directly.`);
+            return uiTool;
+    }
+}
+
+/**
+ * Set active tool for a tool group (v3.x compatible)
+ */
+export async function setActiveToolInGroup(toolGroupId: string, uiTool: UiToolType): Promise<void> {
+  const toolGroup = await createToolGroup(toolGroupId);
+  const modules = cornerstoneModules!;
+
+  const newToolName = await mapUiToolToCornerstone3D(uiTool);
+
+  // Handle de-selection (passing null/undefined means no active tool)
+  if (!newToolName) {
+    toolGroup.setToolActive(undefined as any, {} as any);
+    return;
+  }
+
+  const prevPrimary = toolGroup.getCurrentActivePrimaryToolName?.();
+  if (prevPrimary === newToolName) {
+    return;
+  }
+
+  // Gracefully cancel any ongoing drawing on the previous tool before passivating it
+  try {
+    if (prevPrimary) {
+      // Skip cancel/complete for navigation tools and Window/Level to preserve VOI state
+      const wlName = modules?.WindowLevelToolClass?.toolName;
+      const panName = modules?.PanToolClass?.toolName;
+      const zoomName = modules?.ZoomToolClass?.toolName;
+      const scrollName = modules?.StackScrollToolClass?.toolName;
+      const skipCleanupFor = new Set([wlName, panName, zoomName, scrollName].filter(Boolean) as string[]);
+      if (skipCleanupFor.has(prevPrimary)) {
+        // Do not cancel/complete; this avoids reverting VOI or navigation state
+        throw 'skip-cleanup';
+      }
+      const prevInst: any = toolGroup.getToolInstance?.(prevPrimary);
+      if (prevInst) {
+        // Annulla eventuale disegno in corso su **tutti** i viewport e raccogli gli UID delle annotazioni create –
+        const canceledUIDs: string[] = [];
+        toolGroup?.viewportsInfo?.forEach?.(({ renderingEngineId, viewportId }: any) => {
+          const engine = modules?.getRenderingEngine?.(renderingEngineId);
+          const vp: any = engine?.getViewport?.(viewportId);
+          if (vp?.element && typeof prevInst.cancel === 'function') {
+            const uid = prevInst.cancel(vp.element);
+            if (uid) canceledUIDs.push(uid);
+          }
+        });
+
+        // Completa qualsiasi operazione pendente (safe-guard)
+        if (typeof prevInst.complete === 'function') {
+          prevInst.complete();
+        }
+
+        // Rimuove annotazioni corrotte/incomplete per evitare crash (es. RectangleROI senza handles)
+        if (canceledUIDs.length > 0) {
+          const removeAnnotationFn = modules?.csToolsResolved?.annotation?.removeAnnotation;
+          if (typeof removeAnnotationFn === 'function') {
+            canceledUIDs.forEach((uid) => {
+              try {
+                removeAnnotationFn(uid);
+              } catch {}
+            });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // NEW ➜ Passivate previous primary tool before changing bindings
+  if (prevPrimary && prevPrimary !== newToolName) {
+    try {
+      toolGroup.setToolPassive(prevPrimary);
+    } catch {}
+  }
+
+  // Ensure new tool is available in the group
+  try {
+    if (!toolGroup.hasTool?.(newToolName)) {
+      toolGroup.addTool(newToolName);
+    }
+  } catch {}
+
+  // Activate new primary tool on LMB, but for Window/Level keep secondary/wheel bindings to coexist with Pan/Zoom behavior
+  const isWindowLevel = newToolName === modules?.WindowLevelToolClass?.toolName;
+  toolGroup.setToolActive(newToolName, {
+    bindings: [{ mouseButton: modules.ToolEnums?.MouseBindings?.Primary ?? 1 }],
+  });
+
+  // Implementa modalità Pan+Zoom combinata per UX radiologica ottimale
+  try {
+    const panToolName = modules?.PanToolClass?.toolName;
+    const zoomToolName = modules?.ZoomToolClass?.toolName;
+    
+    if (panToolName && zoomToolName) {
+      // Assicurati che Pan e Zoom siano registrati (una tantum)
+      if (!toolGroup.hasTool?.(panToolName)) {
+        toolGroup.addTool(panToolName);
+      }
+      if (!toolGroup.hasTool?.(zoomToolName)) {
+        toolGroup.addTool(zoomToolName);
+      }
+
+      // Se il tool primario è Pan o Zoom dobbiamo invertire i ruoli dei due navigation tools
+      if (newToolName === panToolName) {
+        // Pan primario + Zoom su wheel
+        toolGroup.setToolActive(zoomToolName, {
+          bindings: [{ mouseButton: modules.ToolEnums?.MouseBindings?.Wheel }]
+        });
+      } else if (newToolName === zoomToolName) {
+        // Zoom primario + Pan su RMB
+        toolGroup.setToolActive(panToolName, {
+          bindings: [{ mouseButton: modules.ToolEnums?.MouseBindings?.Secondary ?? 2 }]
+        });
+      }
+      // Caso annotazioni: Pan/Zoom sono già attivi con i binding secondari/wheel assegnati al momento della creazione del ToolGroup.
+    }
+  } catch {}
+
+  // Preserve VOI: when switching away from Window/Level, do not reset synchronizer state.
+  // Additionally, ensure Zoom configuration avoids implicit pan.
+  if (newToolName === modules?.ZoomToolClass?.toolName) {
+    try { toolGroup.setToolConfiguration(newToolName, { pan: false }); } catch {}
+  }
+
+  // Nota: il globalCameraSync propaga lo stato aggiornato agli altri viewport; questa re-applicazione garantisce che
+  // il valore seed sia quello desiderato prima che il sync parta.
+}
+
+/**
+ * Get Cornerstone 3D enums
+ */
+export async function getEnums(): Promise<{ csCore: typeof CoreEnums, csTools: typeof ToolEnums }> {
+  await initializeCornerstone3D(); 
+  const modules = cornerstoneModules;
+  if (!modules || !modules.CoreEnums || !modules.ToolEnums) {
+      throw new Error("Cornerstone Enums not available after initialization.");
+  }
+  return {
+      csCore: modules.CoreEnums,
+      csTools: modules.ToolEnums
+  };
+}
+
+// Legacy compatibility functions (keeping for backward compatibility)
+export const initCornerstone = initializeCornerstone3D;
+
+/**
+ * Initialize with CPU rendering - V3.x handles this automatically
+ * Keeping for API compatibility but v3.x auto-fallback makes this redundant
+ */
+export async function initializeCornerstoneWithCPU(): Promise<void> {
+  console.warn("initializeCornerstoneWithCPU is deprecated. Use initializeCornerstone3D.");
+  return initializeCornerstone3D();
+}
+
+// Default ID for singleton rendering engine since v3.x of Cornerstone3D no longer exports RENDERING_ENGINE_UID
+const DEFAULT_RENDERING_ENGINE_ID = 'defaultRenderingEngine'; 
+
+/**
+ * Add viewport to both Camera and WindowLevel synchronizers (global singletons)
+ */
+export async function addViewportToGlobalSync(viewportId: string, renderingEngineId: string): Promise<void> {
+  await initializeCornerstone3D();
+  const modules = cornerstoneModules;
+  if (!modules?.csToolsResolved) return;
+
+  // Create Camera sync singleton
+  if (!(globalThis as any).__globalCameraSync) {
+    let factory = (modules.csToolsResolved as any).createCameraPositionSynchronizer;
+    if (typeof factory !== 'function' && (modules.csToolsResolved as any).synchronizers) {
+      factory = (modules.csToolsResolved as any).synchronizers.createCameraPositionSynchronizer;
+    }
+    if (typeof factory === 'function') {
+      (globalThis as any).__globalCameraSync = factory('globalCameraSync');
+    }
+  }
+
+  // Create VOI (Window/Level) sync singleton
+  if (!(globalThis as any).__globalVOISync) {
+    let wlFactory = (modules.csToolsResolved as any).createVOISynchronizer;
+    if (typeof wlFactory !== 'function' && (modules.csToolsResolved as any).synchronizers) {
+      wlFactory = (modules.csToolsResolved as any).synchronizers.createVOISynchronizer;
+    }
+    // Fallback to local dist bundle (exported synchronizers) if still undefined
+    if (typeof wlFactory !== 'function') {
+      try {
+        // Dynamic import to avoid static dependency
+        // eslint-disable-next-line import/no-relative-parent-imports, @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        const localSync: any = await import('../../dist/@cornerstonejs/tools/dist/esm/synchronizers/synchronizers/createVOISynchronizer.js');
+        wlFactory = localSync?.default;
+      } catch {}
+    }
+    if (typeof wlFactory === 'function') {
+      (globalThis as any).__globalVOISync = wlFactory('globalVOISync');
+      try { (globalThis as any).__globalVOISync.setOptions({ syncOnFrameRendered: true }); } catch {}
+    }
+  }
+
+  // Add viewport
+  const camSync = (globalThis as any).__globalCameraSync as any;
+  try { camSync?.add?.({ viewportId, renderingEngineId }); } catch {}
+
+  const wlSync = (globalThis as any).__globalVOISync as any;
+  try { wlSync?.add?.({ viewportId, renderingEngineId }); } catch {}
+}
+
+export async function removeViewportFromGlobalCameraSync(viewportId: string, renderingEngineId: string): Promise<void> {
+  const sync = (globalThis as any).__globalCameraSync as any;
+  if (!sync?.remove) return;
+  try {
+    sync.remove({ viewportId, renderingEngineId });
+  } catch {}
 } 

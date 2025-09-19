@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { writeFile, unlink } from 'fs/promises';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 import * as dicomParser from 'dicom-parser';
-
-// Initialize Gemini API
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { getGeminiApiKey } from '@/lib/env';
 
 // Ensure temp directory exists
 const tempDir = join(process.cwd(), 'tmp');
@@ -20,6 +19,9 @@ try {
 
 export async function POST(req: NextRequest) {
   try {
+    // Initialize Gemini API inside the function to ensure env vars are loaded
+    const genAI = new GoogleGenerativeAI(getGeminiApiKey());
+    
     const formData = await req.formData();
     const file = formData.get('file') as File;
 
