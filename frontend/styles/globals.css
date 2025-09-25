@@ -461,27 +461,22 @@
     background-color: hsl(224 30% 10%);
     border-color: hsl(224 35% 14%);
   }
+}
 
-  /* Cornerstone error suppression */
-  .cornerstone-error-suppressed .cornerstone-canvas-error,
-  .cornerstone-error-suppressed .cornerstone-errored,
-  .cornerstone-error-suppressed [class*='error'],
-  .cornerstone-error-suppressed div[style*='color: rgb(211, 34, 20)'],
-  .cornerstone-error-suppressed div:contains('Failed to load image') {
-    display: none !important;
-  }
+/* Active viewport halo (#2ADFB2) */
+body[data-active-viewport="CT_AXIAL_1"] [data-viewport-id="CT_AXIAL_1"],
+body[data-active-viewport="CT_SAGITTAL_1"] [data-viewport-id="CT_SAGITTAL_1"],
+body[data-active-viewport="CT_CORONAL_1"] [data-viewport-id="CT_CORONAL_1"],
+body[data-active-viewport="VOLUME_3D_1"] [data-viewport-id="VOLUME_3D_1"] {
+	outline: 2px solid #2ADFB2;
+	outline-offset: 2px;
+	box-shadow: 0 0 0 2px rgba(42,223,178,0.0), 0 0 0 0 rgba(42,223,178,0.0);
+	border-color: rgba(42,223,178,0.35);
+	animation: haloPulse 320ms ease-out;
+}
 
-  /* Hide generic cornerstone errors in viewports showing 2D message */
-  .dicom-viewport + div[style*='background-color: rgb(211, 34, 20)'],
-  .dicom-viewport div[style*='color: rgb(211, 34, 20)'],
-  .dicom-viewport div[style*='background-color: rgb(211, 34, 20)'] {
-    display: none !important;
-  }
-
-  /* Hide failed to load text in the 2D viewport error message */
-  [style*='background-color: rgb(244, 67, 54)'],
-  div[style*='background-color: rgb(244, 67, 54)'],
-  div[style*='background-color: rgb(211, 34, 20)'] {
-    display: none !important;
-  }
+@keyframes haloPulse {
+	0% { box-shadow: 0 0 0 0 rgba(42,223,178,0.0), 0 0 0 0 rgba(42,223,178,0.0); }
+	60% { box-shadow: 0 0 0 2px rgba(42,223,178,0.35), 0 0 0 8px rgba(42,223,178,0.18); }
+	100% { box-shadow: 0 0 0 2px rgba(42,223,178,0.35), 0 0 0 6px rgba(42,223,178,0.12); }
 }

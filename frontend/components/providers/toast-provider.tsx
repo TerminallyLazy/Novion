@@ -1,10 +1,10 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState } from 'react';
-import { Toaster, type ToastProps } from '@/components/ui/toast';
+import { createContext, useCallback, useContext } from 'react';
+import { useToast as useToastHook } from '@/lib/use-toast';
 
 interface ToastContextType {
-  showToast: (toast: Omit<ToastProps, 'id' | 'onDismiss'>) => void;
+  showToast: (toast: { title: string; description?: string; variant?: 'default' | 'destructive' }) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -18,21 +18,15 @@ export function useToast() {
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Omit<ToastProps, 'onDismiss'>[]>([]);
+  const { toast } = useToastHook();
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  }, []);
-
-  const showToast = useCallback(({ title, description, variant = 'default' }: Omit<ToastProps, 'id' | 'onDismiss'>) => {
-    const id = `toast-${Date.now()}`;
-    setToasts(prev => [...prev, { id, title, description, variant }]);
-  }, []);
+  const showToast = useCallback(({ title, description, variant = 'default' }: { title: string; description?: string; variant?: 'default' | 'destructive' }) => {
+    toast({ title, description, variant });
+  }, [toast]);
 
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <Toaster toasts={toasts} onDismiss={dismissToast} />
     </ToastContext.Provider>
   );
 } 

@@ -1,5 +1,5 @@
 import { type FunctionDeclaration, SchemaType } from "@google/generative-ai";
-import { useEffect, useState, memo, useRef } from "react";
+import { useEffect, useState, memo, useRef, useMemo, useCallback } from "react";
 
 interface Config {
   model: string;
@@ -20,33 +20,6 @@ interface Client {
     }) => void;
   send: (message: string) => void
 }
-// use useRef instead of a variable so it does not reset on every render.
-const clientRef = useRef<Client | null>(null);
-const client: Client = {
-    on: (event, callback) => {
-        if (clientRef.current) {
-            window.addEventListener(event, callback as any);
-        }
-    },
-    off: (event, callback) => {
-        if (clientRef.current) {
-        window.removeEventListener(event, callback as any);
-        }
-    },
-    sendToolResponse: (response) => {
-        // Implement response sending logic
-        console.log('Sending tool response:', response);
-      if (clientRef.current) {
-         clientRef.current.send(JSON.stringify(response))
-      }
-      },
-    send: (message) => {
-        if(clientRef.current) {
-            console.log("placeholder: send message to backend via websocket:", message);
-        }
-    }
-};
-
 
 const setConfig = (config: Config) => {
   // Implement configuration setting logic
@@ -98,7 +71,37 @@ function GeminiWebSearchComponent() {
   const [responseText, setResponseText] = useState<string>("");
   const [groundingMetadata, setGroundingMetadata] = useState<string>("");
   const [medicalImageResults, setMedicalImageResults] = useState<string>("");
-  const handleToolCall = (toolCall: ToolCall | any) => {
+  
+  // Move clientRef inside the component
+  const clientRef = useRef<Client | null>(null);
+  
+  // Use useMemo to create client object to prevent re-creation on every render
+  const client: Client = useMemo(() => ({
+    on: (event, callback) => {
+        if (clientRef.current) {
+            window.addEventListener(event, callback as any);
+        }
+    },
+    off: (event, callback) => {
+        if (clientRef.current) {
+        window.removeEventListener(event, callback as any);
+        }
+    },
+    sendToolResponse: (response) => {
+        // Implement response sending logic
+        console.log('Sending tool response:', response);
+      if (clientRef.current) {
+         clientRef.current.send(JSON.stringify(response))
+      }
+      },
+    send: (message) => {
+        if(clientRef.current) {
+            console.log("placeholder: send message to backend via websocket:", message);
+        }
+    }
+  }), []);
+  
+  const handleToolCall = useCallback((toolCall: ToolCall | any) => {
     console.log("Received tool call:", toolCall);
     if (toolCall && toolCall.functionCalls) {
         const fc = toolCall.functionCalls.find(
@@ -136,14 +139,14 @@ function GeminiWebSearchComponent() {
           console.log("Received medical image message from python:", toolCall)
           setMedicalImageResults(toolCall.medical_image_results)
         } 
-    };
+    }, [client]);
 
     useEffect(() => {
         clientRef.current = client;
         return () => {
             clientRef.current = null;
         }
-    }, [])
+    }, [client])
     
   useEffect(() => {
     // Configure the Gemini model and tools
@@ -158,7 +161,7 @@ function GeminiWebSearchComponent() {
       },
       tools: [{ googleSearch: {} }, { functionDeclarations: [declaration, medicalImageDeclaration] }],
     });
-  }, [setConfig]);
+  }, []);
 
   useEffect(() => {
     // Handle tool calls
@@ -169,7 +172,7 @@ function GeminiWebSearchComponent() {
       client.off("toolcall", handleToolCall);
       client.off("message", handleToolCall);
     };
-  }, [client]);
+  }, [client, handleToolCall]);
 
   return (
     <div>

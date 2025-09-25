@@ -6,12 +6,7 @@ import os
 import base64
 import websockets
 import httpx
-import sys
-from pathlib import Path
-# Fix deprecated websockets imports
-from websockets.sync.client import connect as ws_connect
-# Replace deprecated import
-from websockets.server import WebSocketServer
+from websockets.client import WebSocketClientProtocol
 from websockets.server import serve
 from dotenv import load_dotenv
 import struct
@@ -20,25 +15,18 @@ import PIL
 import mss
 import requests 
 from google import genai
-from google.genai import types
 from PIL import Image
 from io import BytesIO
-from tool_spec import FUNCTIONS, load_file_content, load_file_content_schema
-from tools.researcher import search_pubmed, fetch_pubmed_details, get_pubmed_identifiers, get_pmc_link, retrieve_article_text
-from tools.medications import get_rxnorm_info_by_ndc, get_drug_use_cases, search_drugs_for_condition
-from tools.medical_info import search_wikem
-
-
+# from google.generativeai import WebSocketDisconnect
 
 # ------------------------------------------------------------------------------
 # ENV and constants
 # ------------------------------------------------------------------------------
 load_dotenv()
 
-
 host = "generativelanguage.googleapis.com"
 WEB_SERVER_PORT = 8080  # Port for the frontend to connect to
-api_key = os.environ.get("GEMINI_API_KEY", "")
+api_key = os.environ["GEMINI_API_KEY"]
 uri = f"wss://{host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key={api_key}"
 
 # Global variables
@@ -62,30 +50,6 @@ mic_muted = False
 isConnected = False
 
 # ------------------------------------------------------------------------------
-# WebSocket utilities - MOVED HERE
-# ------------------------------------------------------------------------------
-async def send_json(websocket, data):
-    """Utility function to send JSON data over WebSocket."""
-    try:
-        await websocket.send(json.dumps(data))
-    except Exception as e:
-        print(f"Error sending JSON: {e}")
-
-async def receive_json(websocket):
-    """Utility function to receive JSON data from WebSocket."""
-    try:
-        message = await websocket.recv()
-        if isinstance(message, bytes):
-            message = message.decode('utf-8')
-        return json.loads(message)
-    except json.JSONDecodeError:
-        print("Received non-JSON message")
-        return None
-    except Exception as e:
-        print(f"Error receiving JSON: {e}")
-        return None
-
-# ------------------------------------------------------------------------------
 # "BidiGenerateContentSetup" message to initialize the session
 # ------------------------------------------------------------------------------
 setup_message = {
@@ -100,202 +64,9 @@ setup_message = {
                     }
                 }
             }
-        },
-        "tools": [
-            {"code_execution": {}}, 
-            {"google_search": {}},
-            {"function_declarations": [
-                load_file_content_schema,
-                {
-                    "name": "searchPubMed",
-                    "description": "Search PubMed for medical research articles",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query for PubMed"
-                            },
-                            "retmax": {
-                                "type": "number",
-                                "description": "Maximum number of results to return (default: 20)"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                },
-                {
-                    "name": "fetchPubMedDetails",
-                    "description": "Retrieve detailed information for PubMed articles",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query or a list of PMIDs"
-                            },
-                            "retmax": {
-                                "type": "number",
-                                "description": "Maximum number of results to return (default: 20)"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                },
-                {
-                    "name": "getPubMedIdentifiers",
-                    "description": "Extract PubMed identifiers from text",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "description": "Text to search for PubMed identifiers"
-                            }
-                        },
-                        "required": ["text"]
-                    }
-                },
-                {
-                    "name": "getPMCLink",
-                    "description": "Get PubMed Central link for an article",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "pmid": {
-                                "type": "string",
-                                "description": "PubMed ID of the article"
-                            }
-                        },
-                        "required": ["pmid"]
-                    }
-                },
-                {
-                    "name": "retrieveArticleText",
-                    "description": "Retrieve full text of a PubMed article",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "pmid": {
-                                "type": "string",
-                                "description": "PubMed ID of the article"
-                            }
-                        },
-                        "required": ["pmid"]
-                    }
-                },
-                {
-                    "name": "getDrugUseCases",
-                    "description": "Get information about drug use cases",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "drug_name": {
-                                "type": "string",
-                                "description": "Name of the drug"
-                            }
-                        },
-                        "required": ["drug_name"]
-                    }
-                },
-                {
-                    "name": "searchDrugsForCondition",
-                    "description": "Search drugs recommended for a specific medical condition",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "condition": {
-                                "type": "string",
-                                "description": "The medical condition to search drugs for"
-                            }
-                        },
-                        "required": ["condition"]
-                    }
-                },
-                {
-                    "name": "searchWikEM",
-                    "description": "Search WikEM medical knowledge base",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query for WikEM"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            ]}
-        ]
-    }
-}
-
-async def handle_tool_call(websocket, tool_call):
-    """
-    Handle tool calls from the Gemini Live API.
-    This function processes function calls by executing the appropriate function
-    and sending the response back to Gemini.
-    """
-    if not hasattr(tool_call, 'function_call'):
-        print("Tool call does not have function_call attribute")
-        return
-
-    function_call = tool_call.function_call
-    tool_name = function_call.name
-    args = function_call.args
-    result = None
-            
-    print(f"Handling tool call: {tool_name} with args: {args}")
-    
-    # Notify the frontend that a tool is being used
-    await send_json(websocket, {
-        "type": "system_message",
-        "content": f"Using tool: {tool_name} with args: {json.dumps(args)}"
-    })
-    
-    try:
-        # Call the appropriate function based on the tool name
-        if tool_name == "searchPubMed":
-            result = search_pubmed(**args)
-        elif tool_name == "fetchPubMedDetails":
-            result = fetch_pubmed_details(**args)
-        elif tool_name == "getPubMedIdentifiers":
-            result = get_pubmed_identifiers(**args)
-        elif tool_name == "getPMCLink":
-            result = get_pmc_link(**args)
-        elif tool_name == "retrieveArticleText":
-            result = retrieve_article_text(**args)
-        elif tool_name == "getDrugUseCases":
-            result = get_drug_use_cases(**args)
-        elif tool_name == "searchDrugsForCondition":
-            result = search_drugs_for_condition(**args)
-        elif tool_name == "searchWikEM":
-            result = search_wikem(**args)
-        elif tool_name == "load_file_content":
-            result = load_file_content(**args)
-        # Add more tool handlers here
-        else:
-            result = {"error": f"Unknown tool: {tool_name}"}
-    except Exception as e:
-        print(f"Error executing tool {tool_name}: {e}")
-        result = {"error": str(e)}
-        
-    # Send the tool response back to Gemini
-    tool_response = {
-        "tool_results": {
-            "function_results": [
-                {
-                    "name": tool_name,
-                    "function_call_id": getattr(function_call, 'id', ''),
-                    "result": result
-                }
-            ]
         }
     }
-    
-    await websocket.send(json.dumps(tool_response))
-    print(f"Sent tool response for {tool_name}: {result}")
+}
 
 async def main():
     async with websockets.connect(
@@ -368,6 +139,123 @@ def build_text_message(user_input: str) -> str:
     }
     return json.dumps(msg)
 
+#------------------------------------------------------------------------------
+# Main session
+# ------------------------------------------------------------------------------
+async def gemini_session(websocket):
+    global isConnected
+    isConnected = True
+    
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash-exp',
+            tools=[
+                {
+                    "name": "searchMedicalImages",
+                    "description": "Search for medical images in the NIH Open-I database",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query for finding medical images"
+                            },
+                            "n": {
+                                "type": "number",
+                                "description": "Start index (1-based)"
+                            },
+                            "m": {
+                                "type": "number",
+                                "description": "End index"
+                            },
+                            "at": {
+                                "type": "string",
+                                "description": "Article type filter"
+                            },
+                            "coll": {
+                                "type": "string",
+                                "description": "Collection filter"
+                            },
+                            "favor": {
+                                "type": "string",
+                                "description": "Rank by preference"
+                            },
+                            "fields": {
+                                "type": "string",
+                                "description": "Fields to search in"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "loadImageSeries",
+                    "description": "Load and display an image series in the appropriate viewer (DICOM, image, or video)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "imgId": {
+                                "type": "string",
+                                "description": "The ID of the image series to load"
+                            },
+                            "type": {
+                                "type": "string",
+                                "description": "The type of viewer to use (dicom, image, or video)",
+                                "enum": ["dicom", "image", "video"]
+                            },
+                            "viewerId": {
+                                "type": "string",
+                                "description": "Optional ID of the specific viewer to load the series into"
+                            }
+                        },
+                        "required": ["imgId"]
+                    }
+                }
+            ]
+        )
+        
+        chat = model.start_chat(history=[])
+        
+        while isConnected:
+            try:
+                message = await websocket.receive_text()
+                response = chat.send_message(message)
+                
+                if response.candidates[0].content.parts[0].function_call:
+                    function_call = response.candidates[0].content.parts[0].function_call
+                    result = None
+                    
+                    if function_call.name == "searchMedicalImages":
+                        result = await websocket.send_json({
+                            "type": "tool_call",
+                            "name": "searchMedicalImages",
+                            "args": function_call.args
+                        })
+                    elif function_call.name == "loadImageSeries":
+                        result = await websocket.send_json({
+                            "type": "tool_call",
+                            "name": "loadImageSeries",
+                            "args": function_call.args
+                        })
+                    
+                    if result:
+                        response = chat.send_message(result)
+                
+                # Send the final response back to the frontend
+                await websocket.send_text(response.text)
+                
+            except WebSocketDisconnect:
+                isConnected = False
+                break
+            except Exception as e:
+                print(f"Error in gemini_session: {str(e)}")
+                await websocket.send_text(f"Error: {str(e)}")
+                
+    except Exception as e:
+        print(f"Error in gemini_session: {str(e)}")
+        if isConnected:
+            await websocket.send_text(f"Error: {str(e)}")
+    finally:
+        isConnected = False
 
 
 def build_audio_chunk_message(chunk: bytes) -> str:
@@ -453,6 +341,188 @@ async def text_input_task(ws: websockets.WebSocketClientProtocol):
         message_str = build_text_message(user_text)
         await ws.send(message_str)
 
+
+# ------------------------------------------------------------------------------
+# Web search function
+# ------------------------------------------------------------------------------
+def perform_web_search(query):
+    """Performs a web search using an external API."""
+    try:
+        # Replace with your preferred web search API
+        search_url = f"https://www.googleapis.com/customsearch/v1?q={query}&cx=YOUR_CUSTOM_SEARCH_ID&key=YOUR_API_KEY" # added constants
+        response = requests.get(search_url)
+        response.raise_for_status() # Raise an exception for HTTP errors
+        search_results = response.json()
+
+        # Format results if needed
+        formatted_results = json.dumps(search_results, indent = 2)
+        return formatted_results
+    except requests.exceptions.RequestException as e:
+        print(f"Error performing web search:{e}")
+        return None
+
+
+# ------------------------------------------------------------------------------
+# Medical image function
+# ------------------------------------------------------------------------------
+async def fetch_and_analyze_medical_images(gemini_response: dict, api_key: str = None) -> str:
+    """
+    Fetches medical imaging data from a public API, analyzes it using Gemini,
+    and returns analysis result as a text string.
+
+    Args:
+        gemini_response (dict): Full response from Gemini.
+        api_key (str, optional): API key for the medical image API.
+
+    Returns:
+        str: Textual analysis result or an error message.
+    """
+    try:
+        # 1. Identify if images are needed via the model's response
+        if "I need to see" not in gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "").lower():
+            return "No medical imaging was needed"
+
+        # 2. Get the search terms from Gemini's response
+        search_terms = gemini_response.get("serverContent", {}).get("modelTurn", {}).get("parts", [{}])[0].get("text", "")
+        if not search_terms:
+            return "Error: could not extract search terms from gemini response."
+            
+        # Extract keywords from the search terms:
+        keywords = search_terms.replace("I need to see","").replace("chest x-ray","").strip()
+
+        # 3. Search for and retrieve images
+        image_data, image_type, image_format = await get_images_from_api(keywords, api_key)
+        if not image_data:
+            return "Error: no medical imaging images were found."
+
+        # 4. Convert image data to base64 for Gemini
+        try:
+            image_b64 = base64.b64encode(image_data).decode('utf-8')
+        except Exception as e:
+            print(f"Error encoding image to base64: {e}")
+            return "Error: Could not encode image for analysis."
+
+        # 5. Initialize Gemini model for image analysis
+        try:
+            model = genai.GenerativeModel('gemini-1.5-pro')
+            
+            # Prepare the image and prompt for analysis
+            prompt = "Please analyze this medical image and describe any notable findings, abnormalities, or areas of concern. Be specific and thorough in your analysis."
+            
+            # Generate content with the image and prompt
+            response = model.generate_content([
+                {'mime_type': f'image/{image_format.lower()}', 'data': image_b64},
+                prompt
+            ])
+            
+            analysis_results = response.text
+            
+            # 6. Load the image into the DICOM viewer if applicable
+            try:
+                load_images_into_dicom_viewer(image_data, image_type, image_format)
+                print(f"Medical image was successfully added to dicom viewer.")
+            except Exception as e:
+                print(f"Warning: Could not load image into DICOM viewer: {e}")
+                # Continue with analysis even if viewer loading fails
+            
+            return f"Analysis results: {analysis_results}"
+
+        except Exception as e:
+            print(f"Error during Gemini image analysis: {e}")
+            return f"Error: Could not analyze the medical imaging with Gemini: {e}"
+
+    except Exception as e:
+        print(f"Error in fetch_and_analyze_medical_images: {e}")
+        return f"Error during medical imaging fetching and analysis: {e}"
+
+
+async def get_images_from_api(keywords: str, api_key: str = None) -> tuple:
+    """
+    Searches and retrieves images from the NIH Open-i API based on the keywords given.
+    Returns a tuple of (image_data, image_type, image_format)
+    
+    API Documentation: https://openi.nlm.nih.gov/api
+    """
+    try:
+        # Use httpx for async HTTP requests
+        async with httpx.AsyncClient() as client:
+            # NIH Open-i API base endpoint
+            base_url = "https://openi.nlm.nih.gov/api/search"
+            
+            # Construct query parameters
+            params = {
+                'query': keywords,      # Main search term
+                'n': '1',              # Start index
+                'm': '10',             # End index (retrieve up to 10 results)
+                'it': 'x,p,m',         # Image types: x-ray, photograph, medical image
+                'coll': 'pmc,iu,mca',  # Collections: PubMed Central, Indiana Univ, MCA
+                'fields': 't,a,msh',   # Search in title, abstract, MeSH terms
+            }
+            
+            # Make the initial search request
+            response = await client.get(base_url, params=params)
+            response.raise_for_status()
+            search_results = response.json()
+            
+            # Check if we have any results
+            if not search_results or 'list' not in search_results:
+                print("No images found in search results")
+                return None, None, None
+                
+            # Get the first image result
+            for result in search_results['list']:
+                if 'imgLarge' in result:
+                    image_url = result['imgLarge']
+                elif 'imgThumb' in result:
+                    image_url = result['imgThumb']
+                else:
+                    continue
+                    
+                # Fetch the actual image
+                img_response = await client.get(image_url)
+                img_response.raise_for_status()
+                image_data = img_response.content
+                
+                # Use PIL to validate and get image format
+                try:
+                    image = Image.open(BytesIO(image_data))
+                    image_format = image.format  # Returns 'JPEG', 'PNG', etc.
+                    image_type = image.mode     # Returns 'RGB', 'RGBA', etc.
+                    
+                    # Convert image to bytes if needed
+                    if not isinstance(image_data, bytes):
+                        buffer = BytesIO()
+                        image.save(buffer, format=image_format)
+                        image_data = buffer.getvalue()
+                    
+                    return image_data, image_type, image_format.lower()
+                    
+                except Exception as e:
+                    print(f"Error processing image with PIL: {e}")
+                    continue
+            
+            # If we get here, we didn't find any valid images
+            print("No valid images found in search results")
+            return None, None, None
+            
+    except Exception as e:
+        print(f"Error retrieving image from NIH Open-i API: {e}")
+        return None, None, None
+
+
+def load_images_into_dicom_viewer(image_data: bytes, image_type: str, image_format: str) -> bool:
+    """Loads image data into the dicom viewer. Note, that this must be implemented by you.
+    """
+    print (f"placeholder: loading image into dicom viewer of type: {image_type}, format: {image_format}")
+    return True # placeholder must implement dicom loading function
+      
+async def analyze_image_with_vision_api(image_data: bytes, image_type: str, image_format: str) -> str:
+    """Placeholder that performs analysis of the image using its vision capability and returns a string. Must be implemented by you.
+    """
+    # Perform analysis, returning results in a string.
+      
+    print(f"placeholder: performing analysis of image of type: {image_type}, format: {image_format}")
+    return "Analysis: no abnormalities were found"  # Sample data
 
 # ------------------------------------------------------------------------------
 # Task: receiving messages (JSON or binary) from Gemini and handling them
@@ -637,4 +707,3 @@ if __name__ == "__main__":
         print("\nExiting gracefully...")
     except Exception as e:
         print(f"Error: {e}")
-
