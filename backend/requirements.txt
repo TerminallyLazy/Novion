@@ -105,7 +105,7 @@ jsonschema-specifications==2024.10.1
 kay==0.1.2
 kokoro-onnx==0.4.3
 langchain==0.2.13
-langchain-community==0.0.38
+langchain-community==0.3.27
 langchain-core==0.2.43
 langchain-google-vertexai==0.0.3
 langchain-openai==0.3.7
