@@ -167,7 +167,7 @@ Pygments @ file:///work/perseverance-python-buildout/croot/pygments_169884627060
 pylibsrtp==0.11.0
 pyOpenSSL==25.0.0
 pyparsing==3.2.1
-pypdf==5.3.0
+pypdf==6.6.0
 PySocks @ file:///work/perseverance-python-buildout/croot/pysocks_1698845478203/work
 python-dateutil==2.9.0.post0
 python-docx==1.1.2
