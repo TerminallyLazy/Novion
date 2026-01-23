@@ -198,7 +198,7 @@ scikit-learn==1.6.1
 scipy==1.15.2
 segments==2.3.0
 semantic-version==2.10.0
-setuptools==69.5.1
+setuptools==78.1.1
 sgmllib3k==1.0.0
 shapely==2.0.7
 shellingham==1.5.4
