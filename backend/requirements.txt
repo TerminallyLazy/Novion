@@ -44,7 +44,7 @@ csvw==3.5.1
 curl_cffi==0.9.0
 dataclasses-json==0.6.7
 decorator==5.2.1
-deepdiff==8.2.0
+deepdiff==8.6.1
 distro @ file:///croot/distro_1714488253808/work
 dlinfo==2.0.0
 dnspython==2.7.0
