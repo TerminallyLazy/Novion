@@ -231,7 +231,7 @@ tzdata==2025.1
 unstructured==0.12.5
 unstructured-client==0.22.0
 uritemplate==4.1.1
-urllib3==2.3.0
+urllib3==2.6.3
 uvicorn==0.23.2
 webrtcvad==2.0.10
 websockets==14.2
