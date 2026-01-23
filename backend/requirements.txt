@@ -153,7 +153,7 @@ pluggy @ file:///croot/pluggy_1733169602837/work
 pooch==1.8.2
 propcache==0.3.0
 proto-plus==1.26.0
-protobuf==5.29.3
+protobuf==7.34.0rc1
 psycopg2-binary==2.9.10
 pyasn1==0.6.2
 pyasn1_modules==0.4.1
