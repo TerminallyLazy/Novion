@@ -1,3 +1,7 @@
+frontend/.next/*
+dicom-test-files/*
+test-data/*
+
 .env.local
 *.pyc
 *.png
