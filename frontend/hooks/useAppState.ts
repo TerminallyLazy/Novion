@@ -100,9 +100,28 @@ export function useAppState() {
     console.log(`Layout changed to ${layout}, expected ${expectedViewportCount} viewports. Ready state reset.`);
   }, [layout, expectedViewportCount]); // Dependency on count is key
 
+  // Track previous csImageIds to detect new uploads
+  const prevCsImageIdsRef = useRef<string>(JSON.stringify([]));
+
   useEffect(() => {
+    const currentKey = JSON.stringify(csImageIds);
+    const imagesChanged = currentKey !== prevCsImageIdsRef.current;
+
+    // When new images arrive, reset loadSignal so we can re-pulse false→true
+    if (imagesChanged && csImageIds.length > 0 && loadSignal) {
+      setLoadSignal(false);
+      prevCsImageIdsRef.current = currentKey;
+      return; // Let the next render cycle re-evaluate
+    }
+
+    if (imagesChanged) {
+      prevCsImageIdsRef.current = currentKey;
+    }
+
     if (readyViewportIds.size === expectedViewportCount && expectedViewportCount > 0 && csImageIds.length > 0) {
-      setLoadSignal(true);
+      if (!loadSignal) {
+        requestAnimationFrame(() => setLoadSignal(true));
+      }
     } else if (loadSignal && csImageIds.length === 0) {
       setLoadSignal(false);
     }

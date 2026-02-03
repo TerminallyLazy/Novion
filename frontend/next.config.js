@@ -5,7 +5,7 @@ const { ProvidePlugin } = require('webpack');
 const nextConfig = {
   // Use standalone output for better package handling
   output: 'standalone',
-  
+
   // Let Next transpile ESM dependencies if needed (Cornerstone 3D is ESM)
   transpilePackages: [
     '@cornerstonejs/core',
@@ -13,12 +13,28 @@ const nextConfig = {
     '@cornerstonejs/dicom-image-loader',
     '@icr/polyseg-wasm',
   ],
-  
+
   // Keep other experimental opts minimal to avoid deprecation warnings
   experimental: {
     // Intentionally left blank for future-proofing; remove deprecated keys.
   },
-  
+
+  // Turbopack config (Next.js 16 default bundler)
+  turbopack: {
+    root: __dirname,
+    resolveAlias: {
+      // Stub out Node.js built-ins that WASM codecs reference but don't need in-browser
+      fs: { browser: './empty-module.js' },
+      path: 'path-browserify',
+      crypto: 'crypto-browserify',
+      stream: 'stream-browserify',
+      // Client-side polyfills for Cornerstone3D and DICOM dependencies
+      buffer: 'buffer',
+      'process/browser': 'process/browser',
+      util: 'util',
+    },
+  },
+
   webpack: (config, { isServer }) => {
     // Resolve fs and other Node.js modules for dependencies
     config.resolve.fallback = {
@@ -70,11 +86,21 @@ const nextConfig = {
     return config;
   },
   
+  // Proxy BiomedParse API requests to the backend during local development
+  async rewrites() {
+    return [
+      {
+        source: '/api/biomedparse/:path*',
+        destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001'}/api/biomedparse/:path*`,
+      },
+    ];
+  },
+
   // Additional settings for medical imaging apps
   images: {
     unoptimized: true, // Disable Next.js image optimization for DICOM files
   },
-  
+
   // The dedicated SWC minifier flag has been removed in Next 15; modern minifier is always on.
 }
 

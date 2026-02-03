@@ -1,7 +1,12 @@
+package-lock.json
+
 frontend/.next/*
 dicom-test-files/*
 test-data/*
-
+frontend/node_modules/*
+frontend/dist/*
+frontend/lib/api/.venv/*
+backend/.venv/*
 .env.local
 *.pyc
 *.png
@@ -38,6 +43,18 @@ __pycache__/
 # production
 /build
 
+.langgraph*
+
+*.pkl
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.hdf5
+*.hdf
+*.hdf5
+*.hdf5
+
 # misc
 .DS_Store
 *.pem
@@ -57,4 +74,8 @@ next-env.d.ts
 
 public/*
 
-radsysx
+.gitignore
+download-biomedparse-checkpoint.sh
+
+.claude/runtime/logs/stop.log
+.claude/runtime/sessions.jsonl
