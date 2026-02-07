@@ -9,6 +9,7 @@ from typing import AsyncGenerator, List
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain_openai import ChatOpenAI
+from langgraph.types import Overwrite
 
 from tools.medications import get_drug_use_cases, search_drugs_for_condition
 from tools.medical_info import search_wikem
@@ -231,7 +232,14 @@ def process_query(query: str) -> List[str]:
         stream_mode="updates",
     ):
         for node_name, node_data in event.items():
+            if node_data is None:
+                continue
             messages = node_data.get("messages", [])
+            # Unwrap Overwrite if deepagents/langgraph returns one
+            if isinstance(messages, Overwrite):
+                messages = messages.value
+            if not isinstance(messages, list):
+                messages = [messages] if messages else []
             for message in messages:
                 # Extract content from AI/tool messages
                 content = None
@@ -246,6 +254,9 @@ def process_query(query: str) -> List[str]:
                     agent_name = message.get("name", node_name)
 
                 if not content or agent_name in ("user", "human"):
+                    continue
+                # Skip middleware echo nodes that just repeat user input
+                if "middleware" in node_name.lower():
                     continue
 
                 # Sanitize agent name
@@ -294,7 +305,14 @@ async def stream_query(query: str) -> AsyncGenerator[str, None]:
         stream_mode="updates",
     ):
         for node_name, node_data in event.items():
+            if node_data is None:
+                continue
             messages = node_data.get("messages", [])
+            # Unwrap Overwrite if deepagents/langgraph returns one
+            if isinstance(messages, Overwrite):
+                messages = messages.value
+            if not isinstance(messages, list):
+                messages = [messages] if messages else []
             for message in messages:
                 content = None
                 agent_name = node_name
@@ -308,6 +326,9 @@ async def stream_query(query: str) -> AsyncGenerator[str, None]:
                     agent_name = message.get("name", node_name)
 
                 if not content or agent_name in ("user", "human"):
+                    continue
+                # Skip middleware echo nodes that just repeat user input
+                if "middleware" in node_name.lower():
                     continue
 
                 agent_name = re.sub(r"[^a-zA-Z0-9_-]", "_", str(agent_name))

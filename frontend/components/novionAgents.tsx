@@ -1,4 +1,7 @@
+"use client";
+
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 export default function NovionAgent() {
     const [query, setQuery] = useState(""); // User input state
@@ -11,7 +14,7 @@ export default function NovionAgent() {
 
         setLoading(true);
         try {
-            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
             const res = await fetch(`${backendUrl}/process`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -21,7 +24,9 @@ export default function NovionAgent() {
             if (!res.ok) throw new Error("Failed to fetch data");
 
             const data = await res.json();
-            setResponse(data.responses); // Store response
+            if (data.error) throw new Error(data.error);
+            const result = data.result;
+            setResponse(Array.isArray(result) ? result.join("\n\n") : result);
         } catch (error) {
             console.error("Error:", error);
             setResponse("Error fetching response.");
@@ -42,11 +47,8 @@ export default function NovionAgent() {
                 {loading ? (
                     <p className="text-gray-500">Processing your request...</p>
                 ) : response ? (
-                    <div className="p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">
-                        <div
-                            className="text-gray-800 dark:text-gray-200"
-                            dangerouslySetInnerHTML={{ __html: response.replace(/\n/g, "<br />") }}
-                        />
+                    <div className="p-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{response}</ReactMarkdown>
                     </div>
                 ) : (
                     <p className="text-gray-500">Enter a query to get a response.</p>
