@@ -96,6 +96,17 @@ Rules:
 - `services.py`: launch, workspace, report, AI, derived-result, and audit orchestration.
 - `dicomweb.py`: DICOMweb adapter boundary. Orthanc is the reference adapter.
 
+### Research / agent backend
+
+The repo still includes a research/agent backend surface outside the clinical authority path:
+
+- `backend/radsysx.py`: multi-agent research orchestration
+- `backend/chat_interface.py`: direct chat interface
+- `backend/mcp/*`: MCP/FHIR integrations and installer paths
+- `backend/biomedparse_api.py`: research imaging/AI analysis router
+
+Keep these seams available for experimentation, but do not use them as shortcuts around the clinical contracts.
+
 ### Persistence
 
 Clinical backend persistence is currently SQLAlchemy-backed and defaults to:

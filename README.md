@@ -1,11 +1,28 @@
-# RadSysX
+<p align="center">
+  <img src="./RadSysX-Logo.png" alt="RadSysX logo" width="280" />
+</p>
 
-RadSysX is a medical imaging platform with two distinct product surfaces:
+<h1 align="center">RadSysX</h1>
+
+<p align="center">
+  Governed clinical imaging workflows, research experimentation, and agent-assisted medical reasoning.
+</p>
+
+RadSysX is a medical imaging and analysis platform with two distinct product surfaces:
 
 - `clinical`: the governed migration target, built around FastAPI contracts, worklist-driven launch, opaque viewer sessions, audited workflow state, and a dedicated OHIF viewer runtime.
-- `research`: the experimentation surface for prototype workflows, agent tooling, and imaging/AI exploration that is explicitly not the clinical source of truth.
+- `research`: the experimentation surface for prototype workflows, a LangGraph/deepagents-based multi-agent stack, MCP/FHIR integrations, and imaging/AI exploration that is explicitly not the clinical source of truth.
 
 The two surfaces are not interchangeable.
+
+## Platform Overview
+
+The current repo contains both:
+
+- a governed clinical platform with backend-authoritative workflow state and OHIF as the only supported clinical viewer
+- a research stack with direct chat, multi-agent orchestration, MCP tool integration, and BiomedParse-oriented imaging/AI experimentation
+
+That distinction is intentional. The clinical path is the migration target; the research path remains useful, but it does not define clinical architecture.
 
 ## Current State
 
@@ -17,6 +34,15 @@ The current clinical baseline on this branch is:
 - Backend-issued signed cookies provide local seeded clinical identity until institutional auth replaces them.
 - Derived DICOM writeback stays backend-mediated through STOW.
 - The local stack is designed to run as one origin through nginx, frontend, viewer, backend, and Orthanc.
+
+The current research/agent baseline still includes:
+
+- `backend/radsysx.py` for multi-agent orchestration
+- `backend/chat_interface.py` for direct LLM chat
+- `backend/mcp/*` for MCP/FHIR tooling and server installation
+- `backend/biomedparse_api.py` for research imaging analysis APIs
+
+Those capabilities remain part of RadSysX, but they are not the clinical source of truth.
 
 ## Clinical Workflow
 
@@ -38,6 +64,14 @@ The current clinical baseline on this branch is:
 - `backend/server.py`
 - `backend/clinical/*`
 - `backend/tests/test_clinical_platform.py`
+
+### Research and agent stack
+
+- `backend/radsysx.py`
+- `backend/chat_interface.py`
+- `backend/mcp/*`
+- `backend/biomedparse_api.py`
+- `backend/tools/*`
 
 ### Shared browser clinical package
 
@@ -61,6 +95,65 @@ The current clinical baseline on this branch is:
 
 - `docker-compose.yml`
 - `deploy/clinical-stack/*`
+
+## Research and Agent Capabilities
+
+### Multi-agent orchestration
+
+The research surface still includes a LangGraph/deepagents-style multi-agent stack in `backend/radsysx.py`, with a supervisor coordinating specialist agents for:
+
+1. pharmacist reasoning
+2. researcher/literature workflows
+3. medical analyst workflows
+
+### Chat and MCP
+
+The repo still supports:
+
+- direct chat via `backend/chat_interface.py`
+- MCP-backed tool discovery and execution
+- FHIR-oriented MCP tools in `backend/mcp/fhir_server.py`
+- MCP installation flows in `backend/mcp/installer.py`
+
+### Research imaging and AI
+
+Research-only imaging/AI experimentation still includes:
+
+- BiomedParse-oriented APIs in `backend/biomedparse_api.py`
+- prototype imaging upload/analyze routes in the Next.js research surface
+- legacy viewer components kept for experimentation and parity work, not as the clinical viewer target
+
+## Key Endpoints
+
+### Clinical
+
+- `GET /api/auth/session`
+- `POST /api/auth/local-login`
+- `POST /api/auth/logout`
+- `GET /api/platform/config`
+- `GET /api/worklist`
+- `POST /api/imaging/launch`
+- `GET /api/imaging/launch/resolve`
+- `GET /api/studies/{studyUid}/workspace`
+- `POST /api/reports/draft`
+- `POST /api/ai/jobs`
+- `POST /api/derived-results`
+- `POST /api/derived-results/stow`
+- `GET /api/audit/studies/{studyUid}`
+
+### Research / agent
+
+- `POST /process`
+- `POST /stream`
+- `GET /stream`
+- `POST /chat`
+- `POST /chat/stream`
+- `GET /tools`
+- `POST /execute_tool`
+- `POST /fhir/tool`
+- `GET /mcp/status`
+- `POST /mcp/toggle`
+- `POST /mcp/install`
 
 ## Runtime Modes
 
@@ -106,6 +199,18 @@ npm install --legacy-peer-deps
 ```
 
 Backend dependencies are managed from `backend/requirements.txt`.
+
+### Run backend directly
+
+```bash
+python3 backend/server.py
+```
+
+### Run the research shell directly
+
+```bash
+npm run dev --workspace frontend
+```
 
 ### Focused backend checks
 
