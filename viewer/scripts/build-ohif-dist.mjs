@@ -6,9 +6,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const viewerRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(viewerRoot, "dist");
+const workspaceRoot = path.resolve(viewerRoot, "..");
 const candidateSourceDists = [
   path.join(viewerRoot, "node_modules", "@ohif", "app", "dist"),
-  path.join(viewerRoot, "..", "node_modules", "@ohif", "app", "dist"),
+  path.join(workspaceRoot, "node_modules", "@ohif", "app", "dist"),
 ];
 const sourceDist = candidateSourceDists.find((candidate) => fs.existsSync(candidate));
 
@@ -22,28 +23,39 @@ fs.rmSync(distRoot, { recursive: true, force: true });
 fs.mkdirSync(distRoot, { recursive: true });
 fs.cpSync(sourceDist, distRoot, { recursive: true });
 
-copyAsset("novion-bootstrap.js");
-copyAsset("novion-bridge.js");
-copyAsset("novion-bridge.css");
+copyViewerAsset("radsysx-bootstrap.js");
+copyViewerAsset("radsysx-ohif-extension.js");
+copyViewerAsset("radsysx-ohif-mode.js");
+copyViewerAsset("radsysx-viewer.css");
+copyWorkspaceAsset(["react", "umd", "react.production.min.js"], "react.production.min.js");
 writeAppConfig();
 patchIndexHtml();
 
-function copyAsset(fileName) {
+function copyViewerAsset(fileName) {
   fs.copyFileSync(
     path.join(viewerRoot, "assets", fileName),
     path.join(distRoot, fileName),
   );
 }
 
+function copyWorkspaceAsset(relativeParts, outputName) {
+  const assetPath = path.join(workspaceRoot, "node_modules", ...relativeParts);
+  if (!fs.existsSync(assetPath)) {
+    throw new Error(`Required viewer asset was not found: ${assetPath}`);
+  }
+  fs.copyFileSync(assetPath, path.join(distRoot, outputName));
+}
+
 function writeAppConfig() {
   const config = `/** @type {AppTypes.Config} */
-(function novionAppConfig() {
-  const resolved = window.__NOVION_LAUNCH__;
+(function radsysxAppConfig() {
+  const resolved = window.__RADSYSX_LAUNCH__;
   const runtime = resolved?.viewerRuntime ?? {};
   window.config = {
-    name: "config/novion-clinical.js",
+    name: "config/radsysx-clinical.js",
     routerBasename: runtime.viewerBasePath ?? "/viewer",
     extensions: [
+      window.__RADSYSX_OHIF_EXTENSION__,
       "@ohif/extension-default",
       "@ohif/extension-cornerstone",
       "@ohif/extension-measurement-tracking",
@@ -53,8 +65,7 @@ function writeAppConfig() {
       "@ohif/extension-dicom-video",
     ],
     modes: [
-      "@ohif/mode-longitudinal",
-      "@ohif/mode-segmentation",
+      window.__RADSYSX_OHIF_MODE__,
     ],
     customizationService: {},
     showStudyList: false,
@@ -68,8 +79,8 @@ function writeAppConfig() {
         namespace: "@ohif/extension-default.dataSourcesModule.dicomweb",
         sourceName: "dicomweb",
         configuration: {
-          friendlyName: "Novion Clinical DICOMweb",
-          name: "novionOrthanc",
+          friendlyName: "RadSysX Clinical DICOMweb",
+          name: "radsysxOrthanc",
           qidoRoot: runtime.qidoRoot ?? "/dicom-web",
           wadoRoot: runtime.wadoRoot ?? "/dicom-web",
           wadoUriRoot: runtime.wadoUriRoot ?? "/dicom-web",
@@ -102,15 +113,17 @@ function patchIndexHtml() {
   html = html.replace(/(src|href)=\"\//g, '$1="/viewer/');
   html = html.replace(
     '<script rel="preload" as="script" src="/viewer/app-config.js"></script>',
-    '<script src="/viewer/novion-bootstrap.js"></script><script rel="preload" as="script" src="/viewer/app-config.js"></script>',
+    [
+      '<script src="/viewer/react.production.min.js"></script>',
+      '<script src="/viewer/radsysx-bootstrap.js"></script>',
+      '<script src="/viewer/radsysx-ohif-extension.js"></script>',
+      '<script src="/viewer/radsysx-ohif-mode.js"></script>',
+      '<script rel="preload" as="script" src="/viewer/app-config.js"></script>',
+    ].join(""),
   );
   html = html.replace(
-    '</head>',
-    '<link href="/viewer/novion-bridge.css" rel="stylesheet"></head>',
-  );
-  html = html.replace(
-    "</body>",
-    '<script defer="defer" src="/viewer/novion-bridge.js"></script></body>',
+    "</head>",
+    '<link href="/viewer/radsysx-viewer.css" rel="stylesheet"></head>',
   );
 
   fs.writeFileSync(indexPath, html, "utf8");

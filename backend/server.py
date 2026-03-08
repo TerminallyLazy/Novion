@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""FastAPI entrypoint for Novion."""
+"""FastAPI entrypoint for RadSysX."""
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,21 +14,21 @@ import pathlib
 import traceback
 from typing import List, Dict, Any, Optional
 
-NOVION_IMPORT_ERROR = None
+RADSYSX_IMPORT_ERROR = None
 
 try:
-    from backend.novion import process_query, stream_query, enable_disable_mcp  # type: ignore
+    from backend.radsysx import process_query, stream_query, enable_disable_mcp  # type: ignore
 except Exception as exc:
-    NOVION_IMPORT_ERROR = exc
+    RADSYSX_IMPORT_ERROR = exc
 
     def process_query(query: str):  # type: ignore
-        return f"Novion agent stack is unavailable: {exc}"
+        return f"RadSysX agent stack is unavailable: {exc}"
 
     async def stream_query(query: str):  # type: ignore
-        yield f"Novion agent stack is unavailable: {exc}"
+        yield f"RadSysX agent stack is unavailable: {exc}"
 
     def enable_disable_mcp(enabled: bool):  # type: ignore
-        return f"MCP toggle unavailable because Novion failed to import: {exc}"
+        return f"MCP toggle unavailable because RadSysX failed to import: {exc}"
 
 try:
     from backend.mcp.fhir_server import FHIRMCPServer  # type: ignore
@@ -68,6 +68,7 @@ try:
     from backend.clinical.config import get_settings
     from backend.clinical.contracts import (
         AIJobCreateRequest,
+        AuthMode,
         ClinicalPlatformConfig,
         DerivedResultStowRequest,
         DerivedResultRequest,
@@ -77,7 +78,7 @@ try:
         SessionClaims,
         SessionResponse,
     )
-    from backend.clinical.dicomweb import OrthancDICOMwebAdapter
+    from backend.clinical.dicomweb import OrthancDICOMwebAdapter, UploadedDicomPart
     from backend.clinical.repositories import ClinicalRepository
     from backend.clinical.services import ClinicalPlatformService
 except ModuleNotFoundError:
@@ -85,6 +86,7 @@ except ModuleNotFoundError:
     from clinical.config import get_settings
     from clinical.contracts import (
         AIJobCreateRequest,
+        AuthMode,
         ClinicalPlatformConfig,
         DerivedResultStowRequest,
         DerivedResultRequest,
@@ -94,14 +96,14 @@ except ModuleNotFoundError:
         SessionClaims,
         SessionResponse,
     )
-    from clinical.dicomweb import OrthancDICOMwebAdapter
+    from clinical.dicomweb import OrthancDICOMwebAdapter, UploadedDicomPart
     from clinical.repositories import ClinicalRepository
     from clinical.services import ClinicalPlatformService
 
 settings = get_settings()
 session_manager = ClinicalSessionManager(settings)
 
-app = FastAPI(title="Novion API")
+app = FastAPI(title="RadSysX API")
 
 # Define the path to frontend files
 frontend_dir = pathlib.Path(__file__).parent.parent / "frontend"
@@ -214,7 +216,7 @@ async def stream(request: Request):
     
     async def event_generator():
         try:
-            # Use a generator function from novion with MCP support
+            # Use a generator function from the RadSysX agent stack with MCP support
             last_tool_used = None
             async for chunk in stream_query(user_query):
                 if not chunk:
@@ -310,21 +312,23 @@ def _set_session_cookie(response: Response, session: SessionClaims) -> None:
     response.set_cookie(
         key=session_manager.cookie_name,
         value=session_manager.dumps(session),
-        httponly=True,
-        samesite="lax",
-        secure=False,
+        httponly=settings.session_cookie_httponly,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
         max_age=settings.session_ttl_seconds,
-        path="/",
+        path=settings.session_cookie_path,
+        domain=settings.session_cookie_domain,
     )
 
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         key=session_manager.cookie_name,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
+        httponly=settings.session_cookie_httponly,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
+        path=settings.session_cookie_path,
+        domain=settings.session_cookie_domain,
     )
 
 
@@ -342,7 +346,12 @@ def _require_session(request: Request) -> SessionClaims:
 @app.post("/api/auth/local-login")
 async def clinical_local_login(payload: LocalLoginRequest, response: Response):
     """Issue a local clinical session for a seeded persona."""
-    session = session_manager.issue_for_username(payload.username)
+    if settings.auth_mode != AuthMode.LOCAL:
+        raise HTTPException(status_code=404, detail="Local clinical login is disabled for this deployment.")
+    try:
+        session = session_manager.issue_for_username(payload.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     _set_session_cookie(response, session)
     return {"session": session.model_dump(by_alias=True)}
 
@@ -488,13 +497,23 @@ async def store_derived_results_stow(
         metadata=metadata_json,
         trace_id=trace_id,
     )
-    file_payloads = [(upload.filename or "derived.dcm", await upload.read()) for upload in files]
-    return await clinical_service.store_uploaded_derived_results(
-        payload,
-        files=file_payloads,
-        actor=actor,
-        source_ip=_client_ip(http_request),
-    )
+    file_payloads = [
+        UploadedDicomPart(
+            filename=upload.filename or "derived.dcm",
+            stream=upload.file,
+        )
+        for upload in files
+    ]
+    try:
+        return await clinical_service.store_uploaded_derived_results(
+            payload,
+            files=file_payloads,
+            actor=actor,
+            source_ip=_client_ip(http_request),
+        )
+    finally:
+        for upload in files:
+            await upload.close()
 
 
 @app.get("/api/audit/studies/{study_uid}")

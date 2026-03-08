@@ -1,4 +1,4 @@
-"""Novion multi-agent medical research system built on deepagents.
+"""RadSysX multi-agent medical research system built on deepagents.
 
 Uses a supervisor deep agent that delegates to specialist subagents
 (pharmacist, researcher, medical_analyst) via the built-in task tool.
@@ -192,7 +192,7 @@ def _create_graph():
         subagents=_build_subagents(),
         skills=["skills/"],
         backend=backend,
-        name="novion_supervisor",
+        name="radsysx_supervisor",
     )
 
 

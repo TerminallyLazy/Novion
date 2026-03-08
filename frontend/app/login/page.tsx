@@ -60,9 +60,9 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-cyan-300/80">
                 <ShieldCheck className="h-4 w-4" />
-                Clinical access
+                RadSysX Clinical Access
               </div>
-              <h1 className="mt-3 text-3xl font-semibold text-white">Local clinical login</h1>
+              <h1 className="mt-3 text-3xl font-semibold text-white">Local RadSysX clinical login</h1>
               <p className="mt-3 max-w-2xl text-sm text-slate-300">
                 This phase uses backend-issued signed cookies over seeded personas so the worklist,
                 launch, reporting, AI, and audit flows all derive actor context server-side.

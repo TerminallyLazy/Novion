@@ -2,20 +2,26 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-TEST_DB_PATH = Path(tempfile.gettempdir()) / "novion-clinical-platform-test.db"
+TEST_DB_PATH = Path(tempfile.gettempdir()) / "radsysx-clinical-platform-test.db"
 if TEST_DB_PATH.exists():
     TEST_DB_PATH.unlink()
 
-os.environ["NOVION_CLINICAL_DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+os.environ["RADSYSX_CLINICAL_DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+os.environ.setdefault("RADSYSX_SESSION_COOKIE_SECURE", "false")
 
 try:
+    import backend.server as server_module  # type: ignore
     from backend.server import app, clinical_service  # type: ignore
-    from backend.clinical.contracts import StoreResult  # type: ignore
+    from backend.clinical.config import ClinicalPlatformSettings  # type: ignore
+    from backend.clinical.contracts import AuthMode, StoreResult  # type: ignore
 except Exception:
+    import server as server_module  # type: ignore
     from server import app, clinical_service  # type: ignore
-    from clinical.contracts import StoreResult  # type: ignore
+    from clinical.config import ClinicalPlatformSettings  # type: ignore
+    from clinical.contracts import AuthMode, StoreResult  # type: ignore
 
 
 client = TestClient(app)
@@ -69,6 +75,87 @@ def test_platform_config_exposes_auth_and_viewer_shape() -> None:
     assert payload["authMode"] == "local"
     assert payload["aiDefaultWorkflowMode"] == "shadow"
     assert payload["aiAllowActive"] is False
+
+
+def test_research_mode_keeps_development_signing_secret_default(monkeypatch) -> None:
+    monkeypatch.setenv("RADSYSX_APP_MODE", "research")
+    monkeypatch.delenv("RADSYSX_CLINICAL_API_SECRET", raising=False)
+    monkeypatch.delenv("RADSYSX_SESSION_SECRET", raising=False)
+    monkeypatch.setenv("RADSYSX_SESSION_COOKIE_SECURE", "false")
+
+    settings = ClinicalPlatformSettings()
+
+    assert settings.clinical_api_secret == "development-only-secret-change-me"
+    assert settings.session_secret == settings.clinical_api_secret
+    assert settings.session_cookie_secure is False
+    assert settings.session_cookie_samesite == "lax"
+
+
+def test_clinical_mode_requires_explicit_signing_secret(monkeypatch) -> None:
+    monkeypatch.setenv("RADSYSX_APP_MODE", "clinical")
+    monkeypatch.setenv("RADSYSX_SESSION_COOKIE_SECURE", "true")
+    monkeypatch.delenv("RADSYSX_CLINICAL_API_SECRET", raising=False)
+    monkeypatch.delenv("RADSYSX_SESSION_SECRET", raising=False)
+
+    with pytest.raises(RuntimeError, match="RADSYSX_CLINICAL_API_SECRET"):
+        ClinicalPlatformSettings()
+
+
+def test_clinical_mode_uses_explicit_signing_secret_for_sessions(monkeypatch) -> None:
+    monkeypatch.setenv("RADSYSX_APP_MODE", "clinical")
+    monkeypatch.setenv("RADSYSX_CLINICAL_API_SECRET", "pytest-clinical-signing-secret")
+    monkeypatch.setenv("RADSYSX_SESSION_COOKIE_SECURE", "true")
+    monkeypatch.delenv("RADSYSX_SESSION_SECRET", raising=False)
+
+    settings = ClinicalPlatformSettings()
+
+    assert settings.clinical_api_secret == "pytest-clinical-signing-secret"
+    assert settings.session_secret == "pytest-clinical-signing-secret"
+    assert settings.session_cookie_secure is True
+
+
+def test_cookie_settings_validate_none_requires_secure(monkeypatch) -> None:
+    monkeypatch.setenv("RADSYSX_APP_MODE", "clinical")
+    monkeypatch.setenv("RADSYSX_CLINICAL_API_SECRET", "pytest-clinical-signing-secret")
+    monkeypatch.setenv("RADSYSX_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("RADSYSX_SESSION_COOKIE_SAMESITE", "none")
+
+    with pytest.raises(RuntimeError, match="RADSYSX_SESSION_COOKIE_SAMESITE"):
+        ClinicalPlatformSettings()
+
+
+def test_local_login_rejects_unknown_persona(monkeypatch) -> None:
+    monkeypatch.setattr(server_module.settings, "auth_mode", AuthMode.LOCAL)
+
+    response = client.post("/api/auth/local-login", json={"username": "missing-user"})
+
+    assert response.status_code == 404
+    assert "unknown local clinical user" in response.json()["detail"].lower()
+
+
+def test_local_login_is_disabled_when_auth_mode_is_not_local(monkeypatch) -> None:
+    monkeypatch.setattr(server_module.settings, "auth_mode", AuthMode.OIDC)
+
+    response = client.post("/api/auth/local-login", json={"username": "demo-radiologist"})
+
+    assert response.status_code == 404
+    assert "disabled" in response.json()["detail"].lower()
+
+
+def test_session_cookie_policy_is_applied_to_login_response(monkeypatch) -> None:
+    monkeypatch.setattr(server_module.settings, "auth_mode", AuthMode.LOCAL)
+    monkeypatch.setattr(server_module.settings, "session_cookie_secure", True)
+    monkeypatch.setattr(server_module.settings, "session_cookie_samesite", "none")
+    monkeypatch.setattr(server_module.settings, "session_cookie_path", "/")
+    monkeypatch.setattr(server_module.settings, "session_cookie_domain", None)
+    monkeypatch.setattr(server_module.settings, "session_cookie_httponly", True)
+
+    response = client.post("/api/auth/local-login", json={"username": "demo-radiologist"})
+
+    assert response.status_code == 200
+    set_cookie = response.headers["set-cookie"].lower()
+    assert "secure" in set_cookie
+    assert "samesite=none" in set_cookie
 
 
 def test_worklist_returns_seeded_rows_for_authenticated_actor() -> None:
@@ -215,10 +302,16 @@ def test_workspace_round_trip_persists_report_ai_job_and_internal_derived_result
 def test_stow_endpoint_persists_backend_registered_refs(monkeypatch) -> None:
     login()
     study_uid = "1.2.840.113619.2.55.3.604688123.1234.1700000001.101"
+    captured_stream = None
 
     async def fake_store_uploaded_instances(request, files):
+        nonlocal captured_stream
         assert request.study_instance_uid == study_uid
         assert len(files) == 1
+        assert files[0].filename == "seg.dcm"
+        captured_stream = files[0].stream
+        assert captured_stream.read(4) == b"DICM"
+        captured_stream.seek(0)
         return StoreResult(
             stored=[f"/dicom-web/studies/{study_uid}/instances/1.2.3.4"],
             warnings=[],
@@ -243,6 +336,8 @@ def test_stow_endpoint_persists_backend_registered_refs(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["result"]["stored"] == [f"/dicom-web/studies/{study_uid}/instances/1.2.3.4"]
+    assert captured_stream is not None
+    assert captured_stream.closed is True
 
     workspace_response = client.get(f"/api/studies/{study_uid}/workspace")
     assert workspace_response.status_code == 200
@@ -250,3 +345,49 @@ def test_stow_endpoint_persists_backend_registered_refs(monkeypatch) -> None:
     assert workspace["derivedResults"][0]["storageClass"] == "SEG"
     assert workspace["derivedResults"][0]["metadata"]["source"] == "pytest-stow"
     assert workspace["derivedResults"][0]["metadata"]["stowFileName"] == "seg.dcm"
+
+
+def test_seed_orthanc_logs_without_study_uids(monkeypatch, capsys) -> None:
+    pytest.importorskip("pydicom")
+
+    try:
+        import backend.clinical.seed_orthanc as seed_orthanc_module  # type: ignore
+    except Exception:
+        import clinical.seed_orthanc as seed_orthanc_module  # type: ignore
+
+    class _Response:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, path, params=None):
+            return _Response([])
+
+        def post(self, path, content=None, headers=None):
+            return _Response({})
+
+    monkeypatch.setattr(seed_orthanc_module.httpx, "Client", _FakeClient)
+
+    seed_orthanc_module.main()
+
+    output = capsys.readouterr().out
+    assert "Seeded CT sample study ACC-CT-24001" in output
+    assert "Seeded MR sample study ACC-MR-24017" in output
+    for study in seed_orthanc_module.SEED_STUDIES:
+        assert study.study_uid not in output
+        assert study.patient_name not in output

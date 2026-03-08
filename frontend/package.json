@@ -1,5 +1,5 @@
 {
-  "name": "@novion/frontend",
+  "name": "@radsysx/frontend",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -18,7 +18,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@novion/clinical-web": "file:../packages/clinical-web",
+    "@radsysx/clinical-web": "file:../packages/clinical-web",
     "@cornerstonejs/core": "^3.19.3",
     "@cornerstonejs/dicom-image-loader": "^3.19.3",
     "@cornerstonejs/tools": "^3.19.3",

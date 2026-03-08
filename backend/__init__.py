@@ -1,1 +1,1 @@
-"""Novion backend package."""
+"""RadSysX backend package."""

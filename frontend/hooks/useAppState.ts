@@ -16,7 +16,7 @@ export function useAppState() {
   const [expandedViewportId, setExpandedViewportId] = useState<string | null>(null);
   const [activeViewportId, setActiveViewportId] = useState<string>('CT_AXIAL_1');
   const [activeTool, setActiveTool] = useState<C3DToolName>('Pan');
-  const [isNovionModalOpen, setIsNovionModalOpen] = useState(false);
+  const [isRadSysXModalOpen, setIsRadSysXModalOpen] = useState(false);
 
   // Image State
   const [csImageIds, setCsImageIds] = useState<string[]>([]);
@@ -231,8 +231,8 @@ export function useAppState() {
     setActiveViewportId,
     activeTool,
     setActiveTool,
-    isNovionModalOpen,
-    setIsNovionModalOpen,
+    isRadSysXModalOpen,
+    setIsRadSysXModalOpen,
 
     // Image State
     csImageIds,

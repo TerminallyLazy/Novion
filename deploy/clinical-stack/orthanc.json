@@ -1,10 +1,10 @@
 {
-  "Name": "Novion Orthanc",
+  "Name": "RadSysX Orthanc",
   "StorageDirectory": "/var/lib/orthanc/db",
   "AuthenticationEnabled": true,
   "RemoteAccessAllowed": true,
   "RegisteredUsers": {
-    "orthanc": "orthanc"
+    "__RADSYSX_ORTHANC_USERNAME__": "__RADSYSX_ORTHANC_PASSWORD__"
   },
   "DicomWeb": {
     "Enable": true,

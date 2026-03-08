@@ -29,7 +29,7 @@ SEED_STUDIES = [
         sop_uid="1.2.840.113619.2.55.3.604688123.1234.1700000001.101.1.1",
         accession_number="ACC-CT-24001",
         patient_id="Patient/example-ct-01",
-        patient_name="Novion^ChestCT",
+        patient_name="RadSysX^ChestCT",
         modality="CT",
         description="Chest CT with contrast",
     ),
@@ -39,7 +39,7 @@ SEED_STUDIES = [
         sop_uid="1.2.840.113619.2.55.3.604688123.1234.1700000002.201.1.1",
         accession_number="ACC-MR-24017",
         patient_id="Patient/example-mr-02",
-        patient_name="Novion^BrainMR",
+        patient_name="RadSysX^BrainMR",
         modality="MR",
         description="Brain MRI follow-up",
     ),
@@ -91,9 +91,12 @@ def build_instance(study: SeedStudy) -> bytes:
 
 
 def main() -> None:
-    orthanc_url = os.getenv("ORTHANC_DICOMWEB_URL", "http://localhost:8042/dicom-web").rstrip("/")
-    username = os.getenv("ORTHANC_USERNAME")
-    password = os.getenv("ORTHANC_PASSWORD")
+    orthanc_url = os.getenv(
+        "RADSYSX_ORTHANC_DICOMWEB_URL",
+        "http://localhost:8042/dicom-web",
+    ).rstrip("/")
+    username = os.getenv("RADSYSX_ORTHANC_USERNAME")
+    password = os.getenv("RADSYSX_ORTHANC_PASSWORD")
     auth = (username, password) if username and password else None
 
     with httpx.Client(base_url=orthanc_url, auth=auth, timeout=10.0) as client:
@@ -123,7 +126,7 @@ def main() -> None:
                 headers={"Content-Type": "application/dicom"},
             )
             store.raise_for_status()
-            print(f"Seeded study {study.study_uid}")
+            print(f"Seeded {study.modality} sample study {study.accession_number}")
 
 
 if __name__ == "__main__":

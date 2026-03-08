@@ -22,12 +22,12 @@ function readProcessEnv(name: string): string | undefined {
 
 export function getAppMode(): AppMode {
   return normalizeMode(
-    readProcessEnv("NOVION_APP_MODE") ?? readProcessEnv("NEXT_PUBLIC_NOVION_APP_MODE"),
+    readProcessEnv("RADSYSX_APP_MODE") ?? readProcessEnv("NEXT_PUBLIC_RADSYSX_APP_MODE"),
   );
 }
 
 export function getPublicAppMode(): AppMode {
-  return normalizeMode(readProcessEnv("NEXT_PUBLIC_NOVION_APP_MODE"));
+  return normalizeMode(readProcessEnv("NEXT_PUBLIC_RADSYSX_APP_MODE"));
 }
 
 export function isResearchMode(): boolean {

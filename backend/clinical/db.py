@@ -11,7 +11,7 @@ class Base(DeclarativeBase):
 
 
 def default_database_url() -> str:
-    db_path = Path(__file__).resolve().parents[1] / "novion_clinical.db"
+    db_path = Path(__file__).resolve().parents[1] / "radsysx_clinical.db"
     return f"sqlite:///{db_path.as_posix()}"
 
 

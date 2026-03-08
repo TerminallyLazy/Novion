@@ -1,124 +1,161 @@
 # RadSysX
 
-A comprehensive medical research and analysis platform with specialized agent-based reasoning capabilities.
+RadSysX is a medical imaging platform with two distinct product surfaces:
 
-## Project Overview
+- `clinical`: the governed migration target, built around FastAPI contracts, worklist-driven launch, opaque viewer sessions, audited workflow state, and a dedicated OHIF viewer runtime.
+- `research`: the experimentation surface for prototype workflows, agent tooling, and imaging/AI exploration that is explicitly not the clinical source of truth.
 
-RadSysX is a medical research and analysis platform with a sophisticated multi-agent system using LangChain, enhanced with MCP (Model Context Protocol) tools and a flexible chat interface.
+The two surfaces are not interchangeable.
 
-## Key Features
+## Current State
 
-### Chat Interface
+The current clinical baseline on this branch is:
 
-- Comprehensive chat interface in `chat_interface.py`
-- Supports multiple LLM providers (OpenAI and Google)
-- Streaming chat responses
-- Direct tool execution via chat commands
-- Specialized agent-based reasoning with chain-of-thought explanation
+- FastAPI is the backend authority for clinical auth, launch, workspace, report, AI, derived-result, and audit workflows.
+- OHIF is the only supported clinical viewer runtime.
+- The old Next.js `/viewer` fallback route is removed.
+- Backend-issued signed cookies provide local seeded clinical identity until institutional auth replaces them.
+- Derived DICOM writeback stays backend-mediated through STOW.
+- The local stack is designed to run as one origin through nginx, frontend, viewer, backend, and Orthanc.
 
-### Specialized Medical Agents
+## Clinical Workflow
 
-RadSysX implements a team of specialized agents with chain-of-thought reasoning:
+1. `POST /api/auth/local-login`
+2. `GET /api/auth/session`
+3. Open `/worklist`
+4. `POST /api/imaging/launch`
+5. Open `/viewer?launch=...`
+6. `GET /api/imaging/launch/resolve`
+7. OHIF binds to the returned runtime and same-origin DICOMweb roots
+8. `GET /api/studies/{studyUid}/workspace`
+9. Persist reports, AI jobs, derived results, and audit through backend contracts
+10. Persist uploaded derived DICOM through `POST /api/derived-results/stow`
 
-1. **Pharmacist Agent**: Expert in medication management, drug interactions, and pharmaceutical care
-2. **Researcher Agent**: Specialist in clinical trials, research methodologies, and evidence-based medicine
-3. **Medical Analyst Agent**: Focused on analyzing patient data, diagnostic information, and treatment outcomes
+## Architecture
 
-All agents show their detailed reasoning process within `<think></think>` tags before providing final recommendations.
+### Clinical authority
 
-### MCP Tool Integration
+- `backend/server.py`
+- `backend/clinical/*`
+- `backend/tests/test_clinical_platform.py`
 
-- MCP installer in `mcp/installer.py`
-- Flexible tool execution system
-- Dynamic MCP server installation
-- Tool discovery and help functionality
+### Shared browser clinical package
 
-### Server Endpoints
+- `packages/clinical-web/*`
 
-- `/chat`: Direct LLM interaction
-- `/chat/stream`: Streaming chat responses
-- `/tools/execute`: Direct MCP tool execution
-- `/tools`: List available tools
-- `/mcp/install`: Install new MCP servers
+### Next.js shell
 
-## Getting Started
+- `frontend/app/login/page.tsx`
+- `frontend/app/worklist/page.tsx`
+- `frontend/app/page.tsx`
 
-### Prerequisites
+### Dedicated OHIF viewer
 
-- Python 3.8+
-- Node.js (for MCP tools)
-- npm/npx
+- `viewer/scripts/build-ohif-dist.mjs`
+- `viewer/assets/radsysx-bootstrap.js`
+- `viewer/assets/radsysx-ohif-extension.js`
+- `viewer/assets/radsysx-ohif-mode.js`
+- `viewer/assets/radsysx-viewer.css`
 
-### Installation
+### Local one-origin stack
 
-1. Clone the repository
-2. Install Python dependencies: `pip install -r requirements.txt`
-3. Set up environment variables in `.env.local`
+- `docker-compose.yml`
+- `deploy/clinical-stack/*`
 
-### Running the Server
+## Runtime Modes
+
+Mode is controlled by `RADSYSX_APP_MODE`:
+
+- `research`
+- `pilot`
+- `clinical`
+
+Rules:
+
+- Only `research` may expose experimental upload/analyze flows.
+- `pilot` and `clinical` use the clinical FastAPI surface and OHIF viewer flow.
+- Governed flows must not send DICOM bytes directly from the browser to third-party AI services.
+
+## Environment
+
+The most important clinical env vars are:
+
+- `RADSYSX_APP_MODE`
+- `RADSYSX_AUTH_MODE`
+- `RADSYSX_CLINICAL_API_SECRET`
+- `RADSYSX_SESSION_SECRET`
+- `RADSYSX_SESSION_COOKIE_SECURE`
+- `RADSYSX_VIEWER_BASE_URL`
+- `RADSYSX_VIEWER_BASE_PATH`
+- `RADSYSX_DICOMWEB_PUBLIC_BASE_URL`
+- `RADSYSX_ORTHANC_DICOMWEB_URL`
+- `RADSYSX_ORTHANC_USERNAME`
+- `RADSYSX_ORTHANC_PASSWORD`
+- `NEXT_PUBLIC_RADSYSX_APP_MODE`
+- `NEXT_PUBLIC_BACKEND_URL`
+- `NEXT_PUBLIC_VIEWER_BASE_URL`
+
+Research-only integrations such as MCP/FHIR tools and BiomedParse still exist, but they do not define the clinical architecture.
+
+## Local Development
+
+### Install
 
 ```bash
-python backend/server.py
+npm install --legacy-peer-deps
 ```
 
-For a simplified demo without external dependencies:
+Backend dependencies are managed from `backend/requirements.txt`.
+
+### Focused backend checks
 
 ```bash
-python simple_server.py
+python3 -m compileall backend/clinical backend/server.py backend/radsysx.py
+python3 -m pytest backend/tests/test_clinical_platform.py
 ```
 
-### Testing
-
-Use the `test_client.py` script to test server functionality:
+### Frontend and viewer checks
 
 ```bash
-python test_client.py
+npm run type-check --workspace frontend
+npm run type-check --workspace viewer
+npm run build --workspace viewer
 ```
 
-Or run specific tests:
+### Run the local one-origin stack
+
+Set explicit Orthanc credentials first:
 
 ```bash
-python test_client.py tools  # Test the tools endpoint
-python test_client.py chat "Hello"  # Test basic chat
-python test_client.py ask pharmacist "What are common side effects of ibuprofen?"  # Test specialized agents
-python test_client.py tool list_fhir_resources  # Test a specific tool
+export RADSYSX_ORTHANC_USERNAME=local-user
+export RADSYSX_ORTHANC_PASSWORD=local-pass
+docker compose up --build
 ```
 
-## Frontend
+Public routes:
 
-The system includes a simple web-based chat interface for interacting with the LLM and MCP tools.
+- shell: [http://localhost:3000](http://localhost:3000)
+- worklist: [http://localhost:3000/worklist](http://localhost:3000/worklist)
+- viewer: [http://localhost:3000/viewer](http://localhost:3000/viewer)
+- API: [http://localhost:3000/api](http://localhost:3000/api)
+- DICOMweb: [http://localhost:3000/dicom-web](http://localhost:3000/dicom-web)
 
-- Access at: `http://localhost:8000/`
-- Supports: Tool execution, agent consultation, streaming responses
+## Guidance
 
-## Development
+The authoritative contributor guidance is:
 
-### Adding New MCP Servers
+- [AGENTS.md](AGENTS.md)
 
-Use the installer API or chat command:
+The current execution checklist for the next clinical tranche is:
 
-```
-/tool install_mcp_server server_name=package_name args=comma,separated,list env=KEY1=VAL1,KEY2=VAL2
-```
+- [PHASE4_CLINICAL_EXECUTION_CHECKLIST.md](PHASE4_CLINICAL_EXECUTION_CHECKLIST.md)
 
-### Adding New Specialized Agents
+## Near-Term Roadmap
 
-Extend the agents in `chat_interface.py` by adding new system messages and agent types.
+The next major clinical tasks are:
 
-## Project Structure
-
-- `backend/`: Core server functionality
-  - `chat_interface.py`: Main chat interface with LLM integration
-  - `server.py`: FastAPI server with API endpoints
-  - `mcp/`: MCP integration modules
-    - `installer.py`: MCP server installation management
-    - `client.py`: RadSysX MCP client implementation
-    - `fhir_server.py`: FHIR MCP server implementation
-- `frontend/`: User interface components
-  - `chat_ui.html`: Web-based chat interface
-- `simple_server.py`: Simplified demo server
-- `test_client.py`: API testing client
-
-## License
-
-Proprietary - All Rights Reserved
+1. Keep docs and runtime guidance aligned with the shipped RadSysX architecture.
+2. Deepen the RadSysX OHIF extension/mode implementation.
+3. Wire OHIF measurement tracking and segmentation into governed SR/SEG export and reload flows.
+4. Validate the full local nginx + frontend + viewer + backend + Orthanc stack end to end.
+5. Move from seeded local identity to institutional identity/context.

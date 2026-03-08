@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
-export default function NovionAgent() {
+export default function RadSysXAgent() {
     const [query, setQuery] = useState(""); // User input state
     const [response, setResponse] = useState(""); // API response state
     const [loading, setLoading] = useState(false); // Loading state
@@ -39,7 +39,7 @@ export default function NovionAgent() {
         <div className="w-full h-[calc(100%-44px)] overflow-hidden flex flex-col">
             {/* Title */}
             <div className="flex items-center justify-between p-4 border-b border-gray-300 dark:border-gray-600">
-                <h2 className="text-lg font-medium">Novion Agents</h2>
+                <h2 className="text-lg font-medium">RadSysX Agents</h2>
             </div>
 
             {/* Response Section */}

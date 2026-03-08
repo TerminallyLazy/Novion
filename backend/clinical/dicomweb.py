@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+import asyncio
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any, BinaryIO, Protocol
 from uuid import uuid4
 
 import httpx
@@ -31,8 +34,14 @@ class DICOMwebAdapter(Protocol):
     async def store_uploaded_instances(
         self,
         request: DerivedResultStowRequest,
-        files: list[tuple[str, bytes]],
+        files: list["UploadedDicomPart"],
     ) -> StoreResult: ...
+
+
+@dataclass(frozen=True)
+class UploadedDicomPart:
+    filename: str
+    stream: BinaryIO
 
 
 class OrthancDICOMwebAdapter:
@@ -156,7 +165,7 @@ class OrthancDICOMwebAdapter:
     async def store_uploaded_instances(
         self,
         request: DerivedResultStowRequest,
-        files: list[tuple[str, bytes]],
+        files: list[UploadedDicomPart],
     ) -> StoreResult:
         warnings: list[str] = []
         if not self._settings.orthanc_base_url:
@@ -175,13 +184,14 @@ class OrthancDICOMwebAdapter:
 
         if len(files) == 1:
             headers = {"Content-Type": request.content_type}
-            content = files[0][1]
+            self._rewind(files[0].stream)
+            content = self._stream_file(files[0].stream)
         else:
-            boundary = f"novion-{uuid4().hex}"
+            boundary = f"radsysx-{uuid4().hex}"
             headers = {
                 "Content-Type": f'multipart/related; type="{request.content_type}"; boundary={boundary}'
             }
-            content = self._build_multipart_related(boundary, files, request.content_type)
+            content = self._build_multipart_related_stream(boundary, files, request.content_type)
 
         async with self._client() as client:
             response = await client.post("/studies", headers=headers, content=content)
@@ -220,6 +230,42 @@ class OrthancDICOMwebAdapter:
         if isinstance(first, list) and first:
             return first[0]
         return first
+
+    @staticmethod
+    def _rewind(stream: BinaryIO) -> None:
+        try:
+            stream.seek(0)
+        except (AttributeError, OSError):
+            return
+
+    async def _stream_file(
+        self,
+        stream: BinaryIO,
+        *,
+        chunk_size: int = 1024 * 1024,
+    ) -> AsyncIterator[bytes]:
+        while True:
+            chunk = await asyncio.to_thread(stream.read, chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+    async def _build_multipart_related_stream(
+        self,
+        boundary: str,
+        files: list[UploadedDicomPart],
+        content_type: str,
+    ) -> AsyncIterator[bytes]:
+        for file in files:
+            self._rewind(file.stream)
+            yield (
+                f"--{boundary}\r\n"
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+            async for chunk in self._stream_file(file.stream):
+                yield chunk
+            yield b"\r\n"
+        yield f"--{boundary}--\r\n".encode("utf-8")
 
     def _build_public_instance_ref(
         self,

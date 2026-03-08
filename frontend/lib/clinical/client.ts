@@ -1,1 +1,1 @@
-export { clinicalApi, createClinicalApi } from "@novion/clinical-web/client";
+export { clinicalApi, createClinicalApi } from "@radsysx/clinical-web/client";

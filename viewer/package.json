@@ -1,5 +1,5 @@
 {
-  "name": "@novion/viewer",
+  "name": "@radsysx/viewer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "type-check": "tsc --noEmit -p ./tsconfig.json"
   },
   "dependencies": {
-    "@novion/clinical-web": "file:../packages/clinical-web",
+    "@radsysx/clinical-web": "file:../packages/clinical-web",
     "@ohif/app": "3.11.1"
   },
   "devDependencies": {
