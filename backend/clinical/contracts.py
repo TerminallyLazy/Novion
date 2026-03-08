@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -168,7 +168,15 @@ class ImagingLaunchContext(ClinicalModel):
 class ImagingLaunchResponse(ClinicalModel):
     context: ImagingLaunchContext
     signature: str
+    launch_token: str = Field(alias="launchToken")
     viewer_url: str
+
+
+class ImagingLaunchResolveResponse(ClinicalModel):
+    launch_token: str = Field(alias="launchToken")
+    context: ImagingLaunchContext
+    signature: str
+    study_wado_rs_uri: str = Field(alias="studyWadoRsUri")
 
 
 class WorklistRow(ClinicalModel):
@@ -249,6 +257,19 @@ class AIJobRecord(ClinicalModel):
     created_at: str
 
 
+class DerivedResultRecord(ClinicalModel):
+    id: str
+    study_instance_uid: str = Field(alias="studyInstanceUID")
+    series_instance_uid: str | None = Field(default=None, alias="seriesInstanceUID")
+    sop_instance_uid: str | None = Field(default=None, alias="sopInstanceUID")
+    object_type: str
+    storage_class: str
+    content_type: str
+    payload_ref: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
 class DerivedResultRequest(ClinicalModel):
     actor_user_id: str
     actor_role: str
@@ -281,5 +302,42 @@ class AuditStudyResponse(ClinicalModel):
     events: list[AuditEvent]
 
 
+class StudyWorkspace(ClinicalModel):
+    worklist_row: WorklistRow | None = Field(default=None, alias="worklistRow")
+    reports: list[ReportRecord] = Field(default_factory=list)
+    ai_jobs: list[AIJobRecord] = Field(default_factory=list, alias="aiJobs")
+    derived_results: list[DerivedResultRecord] = Field(
+        default_factory=list,
+        alias="derivedResults",
+    )
+    audit: list[AuditEvent] = Field(default_factory=list)
+
+
+class LaunchSessionRecord(ClinicalModel):
+    launch_token: str = Field(alias="launchToken")
+    context: ImagingLaunchContext
+    signature: str
+    actor_user_id: str
+    actor_role: str
+    expires_at: str
+    created_at: str
+    resolved_at: str | None = None
+
+
 def utc_now() -> datetime:
     return datetime.utcnow()
+
+
+def to_iso_z(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def parse_iso_z(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed

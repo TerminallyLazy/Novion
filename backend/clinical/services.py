@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 from datetime import timedelta
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -19,24 +20,28 @@ from .contracts import (
     DerivedResultResponse,
     ImagingLaunchContext,
     ImagingLaunchRequest,
+    ImagingLaunchResolveResponse,
     ImagingLaunchResponse,
     ReportDraftRequest,
     ReportRecord,
     ReportStatus,
     ResourceType,
+    StudyWorkspace,
     WorklistResponse,
     WorkflowMode,
+    parse_iso_z,
+    to_iso_z,
     utc_now,
 )
 from .dicomweb import DICOMwebAdapter
-from .repositories import InMemoryClinicalRepository
+from .repositories import ClinicalRepository
 
 
 class ClinicalPlatformService:
     def __init__(
         self,
         settings: ClinicalPlatformSettings,
-        repository: InMemoryClinicalRepository,
+        repository: ClinicalRepository,
         dicomweb_adapter: DICOMwebAdapter,
     ) -> None:
         self._settings = settings
@@ -60,20 +65,22 @@ class ClinicalPlatformService:
             series_instance_uids=request.series_instance_uids,
             patient_ref=request.patient_ref,
             encounter_ref=request.encounter_ref or (worklist_row.encounter_ref if worklist_row else None),
-            accession_number=request.accession_number or (worklist_row.accession_number if worklist_row else None),
+            accession_number=request.accession_number
+            or (worklist_row.accession_number if worklist_row else None),
             prior_study_uids=prior_study_uids,
             mode=request.mode,
-            signed_at=signed_at.isoformat() + "Z",
-            expires_at=expires_at.isoformat() + "Z",
+            signed_at=self._format_dt(signed_at),
+            expires_at=self._format_dt(expires_at),
             scopes=request.requested_scopes or self._default_scopes_for_role(request.actor_role),
         )
         signature = self._sign_context(context)
-        viewer_url = (
-            f"{self._settings.viewer_base_url}"
-            f"?study={context.study_instance_uid}"
-            f"&mode={context.mode}"
-            f"&signature={signature}"
+        launch_token = self._repository.create_launch_session(
+            context=context,
+            actor_user_id=request.actor_user_id,
+            actor_role=request.actor_role,
+            signature=signature,
         )
+        viewer_url = f"{self._settings.viewer_base_url}?launch={quote(launch_token, safe='')}"
 
         self._repository.add_audit_event(
             self._build_audit_event(
@@ -92,7 +99,44 @@ class ClinicalPlatformService:
         return ImagingLaunchResponse(
             context=context,
             signature=signature,
+            launch_token=launch_token,
             viewer_url=viewer_url,
+        )
+
+    async def resolve_imaging_launch(
+        self,
+        launch_token: str,
+        source_ip: str,
+    ) -> ImagingLaunchResolveResponse:
+        session = self._repository.get_launch_session(launch_token)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Launch session was not found.")
+
+        if parse_iso_z(session.expires_at) < utc_now():
+            raise HTTPException(status_code=410, detail="Launch session has expired.")
+
+        study_wado_rs_uri = await self._dicomweb.get_wado_rs_uri(
+            session.context.study_instance_uid
+        )
+
+        self._repository.add_audit_event(
+            self._build_audit_event(
+                actor_user_id=session.actor_user_id,
+                actor_role=session.actor_role,
+                action=AuditAction.VIEW_SERIES,
+                patient_ref=session.context.patient_ref,
+                study_instance_uid=session.context.study_instance_uid,
+                resource_type=ResourceType.STUDY,
+                resource_id=session.context.study_instance_uid,
+                source_ip=source_ip,
+            )
+        )
+
+        return ImagingLaunchResolveResponse(
+            launch_token=session.launch_token,
+            context=session.context,
+            signature=session.signature,
+            study_wado_rs_uri=study_wado_rs_uri,
         )
 
     def get_worklist(
@@ -122,6 +166,29 @@ class ClinicalPlatformService:
             )
         )
         return WorklistResponse(role=role, user_id=user_id, rows=rows)
+
+    def get_study_workspace(
+        self,
+        study_uid: str,
+        user_id: str,
+        role: str,
+        source_ip: str,
+        trace_id: str | None = None,
+    ) -> StudyWorkspace:
+        workspace = self._repository.get_study_workspace(study_uid)
+        self._repository.add_audit_event(
+            self._build_audit_event(
+                actor_user_id=user_id,
+                actor_role=role,
+                action=AuditAction.OPEN_STUDY,
+                study_instance_uid=study_uid,
+                resource_type=ResourceType.STUDY,
+                resource_id=study_uid,
+                trace_id=trace_id,
+                source_ip=source_ip,
+            )
+        )
+        return workspace
 
     def save_report(
         self,
@@ -183,6 +250,7 @@ class ClinicalPlatformService:
         trace_id = request.trace_id or f"trace-{uuid4()}"
 
         for stored_ref, object_ in zip(result.stored, request.objects):
+            self._repository.store_derived_result(object_, stored_ref)
             self._repository.add_audit_event(
                 self._build_audit_event(
                     actor_user_id=request.actor_user_id,
@@ -232,7 +300,7 @@ class ClinicalPlatformService:
     ) -> AuditEvent:
         return AuditEvent(
             event_id=f"audit-{uuid4()}",
-            occurred_at=utc_now().isoformat() + "Z",
+            occurred_at=self._format_dt(utc_now()),
             actor_user_id=actor_user_id,
             actor_role=actor_role,
             action=action,
@@ -244,3 +312,7 @@ class ClinicalPlatformService:
             source_ip=source_ip,
             outcome="success",
         )
+
+    @staticmethod
+    def _format_dt(value) -> str:
+        return to_iso_z(value)

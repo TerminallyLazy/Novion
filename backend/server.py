@@ -72,7 +72,7 @@ try:
         ReportDraftRequest,
     )
     from backend.clinical.dicomweb import OrthancDICOMwebAdapter
-    from backend.clinical.repositories import InMemoryClinicalRepository
+    from backend.clinical.repositories import ClinicalRepository
     from backend.clinical.services import ClinicalPlatformService
 except ModuleNotFoundError:
     from clinical.config import get_settings
@@ -83,7 +83,7 @@ except ModuleNotFoundError:
         ReportDraftRequest,
     )
     from clinical.dicomweb import OrthancDICOMwebAdapter
-    from clinical.repositories import InMemoryClinicalRepository
+    from clinical.repositories import ClinicalRepository
     from clinical.services import ClinicalPlatformService
 
 settings = get_settings()
@@ -265,12 +265,13 @@ except Exception as exc:
             }
 
     fhir_server = _FallbackFHIRServer()
-clinical_repository = InMemoryClinicalRepository()
+clinical_repository = ClinicalRepository(settings.clinical_database_url)
 clinical_service = ClinicalPlatformService(
     settings=settings,
     repository=clinical_repository,
     dicomweb_adapter=OrthancDICOMwebAdapter(settings),
 )
+clinical_repository.initialize()
 
 # Initialize FHIR server on startup
 @app.on_event("startup")
@@ -310,6 +311,15 @@ async def launch_imaging(request: ImagingLaunchRequest, http_request: Request):
     return await clinical_service.launch_imaging(request, source_ip=_client_ip(http_request))
 
 
+@app.get("/api/imaging/launch/resolve")
+async def resolve_imaging_launch(launch: str, http_request: Request):
+    """Resolve an opaque launch token into the signed imaging context."""
+    return await clinical_service.resolve_imaging_launch(
+        launch,
+        source_ip=_client_ip(http_request),
+    )
+
+
 @app.get("/api/worklist")
 async def get_worklist(
     http_request: Request,
@@ -319,6 +329,24 @@ async def get_worklist(
 ):
     """Return the current radiology worklist."""
     return clinical_service.get_worklist(
+        user_id=user_id,
+        role=role,
+        source_ip=_client_ip(http_request),
+        trace_id=trace_id,
+    )
+
+
+@app.get("/api/studies/{study_uid}/workspace")
+async def get_study_workspace(
+    study_uid: str,
+    http_request: Request,
+    role: str = "radiologist",
+    user_id: str = "demo-radiologist",
+    trace_id: str | None = None,
+):
+    """Return the workspace aggregate for a study."""
+    return clinical_service.get_study_workspace(
+        study_uid=study_uid,
         user_id=user_id,
         role=role,
         source_ip=_client_ip(http_request),

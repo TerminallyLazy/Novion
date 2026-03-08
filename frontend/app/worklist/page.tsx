@@ -82,8 +82,8 @@ export default function WorklistPage() {
               <h1 className="mt-3 text-3xl font-semibold text-white">{headline}</h1>
               <p className="mt-3 max-w-3xl text-sm text-slate-300">
                 The worklist is now backed by the FastAPI clinical surface. Study launch is
-                signed, triage remains shadow-first unless governance enables higher modes, and
-                the legacy upload/analyze flows are treated as research-only.
+                opaque and signed, triage remains shadow-first unless governance enables higher
+                modes, and the legacy upload/analyze flows are treated as research-only.
               </p>
             </div>
             <div className="flex items-center gap-3">

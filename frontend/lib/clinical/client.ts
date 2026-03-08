@@ -6,9 +6,11 @@ import type {
   ClinicalPlatformConfig,
   DerivedResultRequest,
   ImagingLaunchRequest,
+  ImagingLaunchResolveResponse,
   ImagingLaunchResponse,
   ReportDraftRequest,
   ReportRecord,
+  StudyWorkspace,
   WorklistResponse,
 } from "@/lib/clinical/contracts";
 
@@ -46,6 +48,11 @@ export const clinicalApi = {
     });
   },
 
+  resolveLaunch(launchToken: string): Promise<ImagingLaunchResolveResponse> {
+    const params = new URLSearchParams({ launch: launchToken });
+    return requestJson(`/api/imaging/launch/resolve?${params.toString()}`);
+  },
+
   saveDraft(payload: ReportDraftRequest): Promise<ReportRecord> {
     return requestJson("/api/reports/draft", {
       method: "POST",
@@ -69,5 +76,16 @@ export const clinicalApi = {
 
   getAuditForStudy(studyInstanceUID: string): Promise<AuditStudyResponse> {
     return requestJson(`/api/audit/studies/${encodeURIComponent(studyInstanceUID)}`);
+  },
+
+  getStudyWorkspace(
+    studyInstanceUID: string,
+    role = "radiologist",
+    userId = "demo-radiologist",
+  ): Promise<StudyWorkspace> {
+    const params = new URLSearchParams({ role, user_id: userId });
+    return requestJson(
+      `/api/studies/${encodeURIComponent(studyInstanceUID)}/workspace?${params.toString()}`,
+    );
   },
 };

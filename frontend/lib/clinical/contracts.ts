@@ -52,7 +52,15 @@ export type ImagingLaunchRequest = {
 export type ImagingLaunchResponse = {
   context: ImagingLaunchContext;
   signature: string;
+  launchToken: string;
   viewerUrl: string;
+};
+
+export type ImagingLaunchResolveResponse = {
+  launchToken: string;
+  context: ImagingLaunchContext;
+  signature: string;
+  studyWadoRsUri: string;
 };
 
 export type WorklistRow = {
@@ -120,6 +128,19 @@ export type AIJobRecord = {
   createdAt: string;
 };
 
+export type DerivedResultRecord = {
+  id: string;
+  studyInstanceUID: string;
+  seriesInstanceUID?: string;
+  sopInstanceUID?: string;
+  objectType: string;
+  storageClass: string;
+  contentType: string;
+  payloadRef?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type AIJobRequest = {
   kind: AIJobKind;
   workflowMode: WorkflowMode;
@@ -179,6 +200,14 @@ export type AuditEvent = {
 export type AuditStudyResponse = {
   studyInstanceUID: string;
   events: AuditEvent[];
+};
+
+export type StudyWorkspace = {
+  worklistRow: WorklistRow | null;
+  reports: ReportRecord[];
+  aiJobs: AIJobRecord[];
+  derivedResults: DerivedResultRecord[];
+  audit: AuditEvent[];
 };
 
 export type ClinicalPlatformConfig = {

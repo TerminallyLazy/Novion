@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import cast
 
 from .contracts import AppMode, WorkflowMode
+from .db import default_database_url
 
 
 class ClinicalPlatformSettings:
@@ -21,6 +22,10 @@ class ClinicalPlatformSettings:
         self.clinical_api_secret = os.getenv(
             "NOVION_CLINICAL_API_SECRET",
             "development-only-secret-change-me",
+        )
+        self.clinical_database_url = os.getenv(
+            "NOVION_CLINICAL_DATABASE_URL",
+            default_database_url(),
         )
         self.launch_ttl_seconds = int(os.getenv("NOVION_LAUNCH_TTL_SECONDS", "900"))
         self.orthanc_base_url = os.getenv("ORTHANC_DICOMWEB_URL", "").rstrip("/")
