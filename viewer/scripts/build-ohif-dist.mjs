@@ -30,6 +30,10 @@ copyViewerAsset("radsysx-viewer.css");
 copyWorkspaceAsset(["react", "umd", "react.production.min.js"], "react.production.min.js");
 writeAppConfig();
 patchIndexHtml();
+patchRuntimePublicPath();
+patchCssAssetUrls();
+patchManifest();
+patchServiceWorkerInit();
 
 function copyViewerAsset(fileName) {
   fs.copyFileSync(
@@ -138,4 +142,92 @@ function patchIndexHtml() {
   );
 
   fs.writeFileSync(indexPath, html, "utf8");
+}
+
+function patchRuntimePublicPath() {
+  const bundlePath = findSingleDistFile("app.bundle.*.js");
+  let bundle = fs.readFileSync(bundlePath, "utf8");
+  const current = '__webpack_require__.p = "/";';
+  const next =
+    '__webpack_require__.p = window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || "/";';
+
+  if (!bundle.includes(current)) {
+    throw new Error(`Unable to patch OHIF runtime public path in ${path.basename(bundlePath)}.`);
+  }
+
+  bundle = bundle.replace(current, next);
+  fs.writeFileSync(bundlePath, bundle, "utf8");
+}
+
+function patchCssAssetUrls() {
+  const cssPaths = fs
+    .readdirSync(distRoot)
+    .filter((fileName) => fileName.endsWith(".css"))
+    .map((fileName) => path.join(distRoot, fileName));
+
+  for (const cssPath of cssPaths) {
+    const css = fs.readFileSync(cssPath, "utf8");
+    const normalized = css.replace(/url\((['"]?)\//g, "url($1");
+    if (normalized !== css) {
+      fs.writeFileSync(cssPath, normalized, "utf8");
+    }
+  }
+}
+
+function patchManifest() {
+  const manifestPath = path.join(distRoot, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    return;
+  }
+
+  const manifest = fs.readFileSync(manifestPath, "utf8");
+  const normalized = manifest.replace(/"src": "\/assets\//g, '"src": "assets/');
+  if (normalized !== manifest) {
+    fs.writeFileSync(manifestPath, normalized, "utf8");
+  }
+}
+
+function patchServiceWorkerInit() {
+  const initPath = path.join(distRoot, "init-service-worker.js");
+  if (!fs.existsSync(initPath)) {
+    return;
+  }
+
+  const source = fs.readFileSync(initPath, "utf8");
+  const current = `navigator.serviceWorker.getRegistrations().then(function (registrations) {
+  for (let registration of registrations) {
+    registration.unregister();
+  }
+});
+`;
+  const next = `if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function (registrations) {
+    for (let registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+`;
+
+  if (source.includes(current)) {
+    fs.writeFileSync(initPath, source.replace(current, next), "utf8");
+  }
+}
+
+function findSingleDistFile(pattern) {
+  const matches = fs
+    .readdirSync(distRoot)
+    .filter((fileName) => matchesGlob(fileName, pattern))
+    .map((fileName) => path.join(distRoot, fileName));
+
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one dist file matching ${pattern}, found ${matches.length}.`);
+  }
+
+  return matches[0];
+}
+
+function matchesGlob(fileName, pattern) {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(fileName);
 }
