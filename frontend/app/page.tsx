@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { Network } from "lucide-react";
 import { Providers } from '@/components/Providers';
 import { MainLayout } from '@/components/layouts/MainLayout';
@@ -13,6 +14,7 @@ import { LeftToolbar } from '@/components/toolbars/LeftToolbar';
 import { RightPanel } from '@/components/toolbars/RightPanel';
 import { LoadedImage } from '@/lib/types';
 import { UiToolType } from '@/lib/utils/cornerstoneInit';
+import { getPublicAppMode } from '@/lib/env';
 
 // Simplified ViewportGrid props without the complex typing from ViewportManager
 interface SimpleViewportGridProps {
@@ -104,6 +106,7 @@ function ViewportGrid({
 
 function App() {
   const state = useAppState();
+  const appMode = getPublicAppMode();
 
   return (
     <MainLayout
@@ -171,6 +174,17 @@ function App() {
       />
 
       {/* Novion Agents Button */}
+      <Link
+        href="/worklist"
+        className={`fixed top-6 right-8 z-30 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${
+          state.theme === 'dark'
+            ? 'border border-cyan-400/40 bg-slate-950/70 text-cyan-200 hover:bg-slate-900'
+            : 'border border-cyan-600/30 bg-white/95 text-cyan-900 hover:bg-white'
+        }`}
+      >
+        Clinical Workspace · {appMode}
+      </Link>
+
       <button
         onClick={() => state.setIsNovionModalOpen(true)}
         className={`fixed bottom-10 left-40 transform -translate-x-1/2 z-30 

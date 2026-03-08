@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""A FastAPI server exposing the medical research assistant API."""
+"""FastAPI entrypoint for Novion."""
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,14 +11,84 @@ import json
 import logging
 import os
 import pathlib
+import traceback
 from typing import List, Dict, Any, Optional
 
-from novion import process_query, stream_query, enable_disable_mcp  # Import functions
-from mcp.fhir_server import FHIRMCPServer
-from mcp.client import RadSysXMCPClient
-from chat_interface import initialize_chat_interface, get_chat_interface
+NOVION_IMPORT_ERROR = None
 
-app = FastAPI(title="Medical Research Assistant API")
+try:
+    from backend.novion import process_query, stream_query, enable_disable_mcp  # type: ignore
+except Exception as exc:
+    NOVION_IMPORT_ERROR = exc
+
+    def process_query(query: str):  # type: ignore
+        return f"Novion agent stack is unavailable: {exc}"
+
+    async def stream_query(query: str):  # type: ignore
+        yield f"Novion agent stack is unavailable: {exc}"
+
+    def enable_disable_mcp(enabled: bool):  # type: ignore
+        return f"MCP toggle unavailable because Novion failed to import: {exc}"
+
+try:
+    from backend.mcp.fhir_server import FHIRMCPServer  # type: ignore
+    from backend.mcp.client import RadSysXMCPClient  # type: ignore
+except ModuleNotFoundError:
+    from mcp.fhir_server import FHIRMCPServer
+    from mcp.client import RadSysXMCPClient
+
+CHAT_IMPORT_ERROR = None
+
+try:
+    from backend.chat_interface import initialize_chat_interface, get_chat_interface  # type: ignore
+except Exception:
+    try:
+        from chat_interface import initialize_chat_interface, get_chat_interface  # type: ignore
+    except Exception as exc:
+        CHAT_IMPORT_ERROR = exc
+
+        class _FallbackChatInterface:
+            async def chat(self, **_: Any) -> str:
+                return f"Chat interface is unavailable: {exc}"
+
+            async def stream_chat(self, **_: Any):
+                yield f"Chat interface is unavailable: {exc}"
+
+            def get_available_tools(self):
+                return []
+
+        def initialize_chat_interface():  # type: ignore
+            return _FallbackChatInterface()
+
+        def get_chat_interface():  # type: ignore
+            return _FallbackChatInterface()
+
+try:
+    from backend.clinical.config import get_settings
+    from backend.clinical.contracts import (
+        AIJobCreateRequest,
+        DerivedResultRequest,
+        ImagingLaunchRequest,
+        ReportDraftRequest,
+    )
+    from backend.clinical.dicomweb import OrthancDICOMwebAdapter
+    from backend.clinical.repositories import ClinicalRepository
+    from backend.clinical.services import ClinicalPlatformService
+except ModuleNotFoundError:
+    from clinical.config import get_settings
+    from clinical.contracts import (
+        AIJobCreateRequest,
+        DerivedResultRequest,
+        ImagingLaunchRequest,
+        ReportDraftRequest,
+    )
+    from clinical.dicomweb import OrthancDICOMwebAdapter
+    from clinical.repositories import ClinicalRepository
+    from clinical.services import ClinicalPlatformService
+
+settings = get_settings()
+
+app = FastAPI(title="Novion API")
 
 # Define the path to frontend files
 frontend_dir = pathlib.Path(__file__).parent.parent / "frontend"
@@ -29,8 +99,8 @@ app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="frontend")
 # ✅ Enable CORS (Allow frontend to call API)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (change in production)
-    allow_credentials=True,
+    allow_origins=["*"] if settings.allow_wildcard_cors else settings.allowed_origins,
+    allow_credentials=not settings.allow_wildcard_cors,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -171,7 +241,37 @@ async def stream(request: Request):
     )
 
 # Create FHIR server instance for handling tool requests
-fhir_server = FHIRMCPServer()
+try:
+    fhir_server = FHIRMCPServer()
+except Exception as exc:
+    class _FallbackFHIRServer:
+        async def initialize(self):
+            return None
+
+        async def list_resources(self):
+            return {"error": f"FHIR integration unavailable: {exc}"}
+
+        async def get_patient_demographics(self, patient_id: str):
+            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
+
+        async def get_medication_list(self, patient_id: str):
+            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
+
+        async def search_resources(self, resource_type: str, search_params: dict):
+            return {
+                "error": f"FHIR integration unavailable: {exc}",
+                "resource_type": resource_type,
+                "params": search_params,
+            }
+
+    fhir_server = _FallbackFHIRServer()
+clinical_repository = ClinicalRepository(settings.clinical_database_url)
+clinical_service = ClinicalPlatformService(
+    settings=settings,
+    repository=clinical_repository,
+    dicomweb_adapter=OrthancDICOMwebAdapter(settings),
+)
+clinical_repository.initialize()
 
 # Initialize FHIR server on startup
 @app.on_event("startup")
@@ -187,6 +287,98 @@ async def startup_event():
         print("✅ Chat interface initialized")
     except Exception as e:
         print(f"Error initializing services: {e}")
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+@app.get("/api/platform/config")
+async def clinical_platform_config():
+    """Expose the active clinical platform posture to the frontend shell."""
+    return {
+        "mode": settings.app_mode.value,
+        "experimentalRoutesEnabled": settings.experimental_routes_enabled,
+        "viewerBaseUrl": settings.viewer_base_url,
+        "aiDefaultWorkflowMode": settings.ai_default_workflow_mode.value,
+        "aiAllowActive": settings.ai_allow_active,
+    }
+
+
+@app.post("/api/imaging/launch")
+async def launch_imaging(request: ImagingLaunchRequest, http_request: Request):
+    """Create a signed imaging launch context for the viewer surface."""
+    return await clinical_service.launch_imaging(request, source_ip=_client_ip(http_request))
+
+
+@app.get("/api/imaging/launch/resolve")
+async def resolve_imaging_launch(launch: str, http_request: Request):
+    """Resolve an opaque launch token into the signed imaging context."""
+    return await clinical_service.resolve_imaging_launch(
+        launch,
+        source_ip=_client_ip(http_request),
+    )
+
+
+@app.get("/api/worklist")
+async def get_worklist(
+    http_request: Request,
+    role: str = "radiologist",
+    user_id: str = "demo-radiologist",
+    trace_id: str | None = None,
+):
+    """Return the current radiology worklist."""
+    return clinical_service.get_worklist(
+        user_id=user_id,
+        role=role,
+        source_ip=_client_ip(http_request),
+        trace_id=trace_id,
+    )
+
+
+@app.get("/api/studies/{study_uid}/workspace")
+async def get_study_workspace(
+    study_uid: str,
+    http_request: Request,
+    role: str = "radiologist",
+    user_id: str = "demo-radiologist",
+    trace_id: str | None = None,
+):
+    """Return the workspace aggregate for a study."""
+    return clinical_service.get_study_workspace(
+        study_uid=study_uid,
+        user_id=user_id,
+        role=role,
+        source_ip=_client_ip(http_request),
+        trace_id=trace_id,
+    )
+
+
+@app.post("/api/reports/draft")
+async def save_report(request: ReportDraftRequest, http_request: Request):
+    """Create or update a report draft with provenance references."""
+    return clinical_service.save_report(request, source_ip=_client_ip(http_request))
+
+
+@app.post("/api/ai/jobs")
+async def submit_ai_job(request: AIJobCreateRequest, http_request: Request):
+    """Queue an AI job under governance rules."""
+    return clinical_service.submit_ai_job(request, source_ip=_client_ip(http_request))
+
+
+@app.post("/api/derived-results")
+async def store_derived_results(request: DerivedResultRequest, http_request: Request):
+    """Stage derived DICOM result references through the imaging gateway contract."""
+    return await clinical_service.store_derived_results(
+        request,
+        source_ip=_client_ip(http_request),
+    )
+
+
+@app.get("/api/audit/studies/{study_uid}")
+async def get_study_audit(study_uid: str):
+    """Return audit events tied to a study instance UID."""
+    return clinical_service.list_audit_events(study_uid)
 
 
 # FHIR tool endpoint

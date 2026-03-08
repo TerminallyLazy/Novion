@@ -9,6 +9,7 @@ frontend/lib/api/.venv/*
 backend/.venv/*
 .env.local
 *.pyc
+*.db
 *.png
 *.dcm
 */node_modules/*
