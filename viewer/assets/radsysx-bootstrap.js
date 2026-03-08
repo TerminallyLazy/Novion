@@ -9,12 +9,16 @@
   const loader = ensureLoader();
   const params = new URLSearchParams(window.location.search);
   const launchFromUrl = params.get("launch");
+  const initialViewerBasePath = normalizeViewerBasePath(window.location.pathname) ?? "/";
+
+  window.__RADSYSX_VIEWER_BASE_PATH__ = initialViewerBasePath;
 
   window.__RADSYSX_BOOTSTRAP_PROMISE__ = bootstrap();
 
   try {
     await window.__RADSYSX_BOOTSTRAP_PROMISE__;
   } catch (error) {
+    clearStoredLaunchToken();
     fail(error instanceof Error ? error.message : "Unable to bootstrap the viewer.");
   }
 
@@ -24,7 +28,7 @@
       stripSensitiveQuery();
     }
 
-    const launchToken = window.__RADSYSX_LAUNCH__ ? null : getStoredLaunchToken();
+    const launchToken = window.__RADSYSX_LAUNCH__ ? null : getStoredLaunchToken() ?? launchFromUrl;
     if (!launchToken && !window.__RADSYSX_LAUNCH__) {
       throw new Error("The OHIF viewer requires a governed launch session.");
     }
@@ -33,9 +37,17 @@
     const session = await requestJson("/api/auth/session");
     if (!session.authenticated || !session.session) {
       if (launchToken) {
-        persistLaunchToken(launchToken);
+        const preserved = persistLaunchToken(launchToken);
+        if (!preserved) {
+          clearStoredLaunchToken();
+          throw new Error(
+            "Sign-in is required, but the viewer could not preserve the governed launch for a login redirect.",
+          );
+        }
       }
-      window.location.replace("/login?next=%2Fviewer");
+      window.location.replace(
+        `/login?next=${encodeURIComponent(window.__RADSYSX_VIEWER_BASE_PATH__ ?? "/")}`,
+      );
       return;
     }
 
@@ -53,8 +65,13 @@
     }
 
     window.__RADSYSX_LAUNCH__ = resolved;
+    window.__RADSYSX_VIEWER_RUNTIME__ = resolved.viewerRuntime;
+    window.__RADSYSX_VIEWER_BASE_PATH__ =
+      normalizeViewerBasePath(resolved.viewerRuntime?.viewerBasePath) ??
+      window.__RADSYSX_VIEWER_BASE_PATH__;
+    applyResolvedViewerRuntime();
     window.__RADSYSX_CLEAN_VIEWER_URL__ = function cleanViewerUrl() {
-      history.replaceState(history.state, "", window.location.pathname);
+      stripSensitiveQuery();
     };
     clearStoredLaunchToken();
     stripSensitiveQuery();
@@ -103,11 +120,33 @@
     history.replaceState(history.state, "", nextUrl);
   }
 
+  function applyResolvedViewerRuntime() {
+    const runtime = window.__RADSYSX_VIEWER_RUNTIME__;
+    const config = window.config;
+    if (!runtime || !config) {
+      return;
+    }
+
+    config.routerBasename = window.__RADSYSX_VIEWER_BASE_PATH__ ?? config.routerBasename;
+
+    const dicomwebSource = config.dataSources?.find((entry) => entry?.sourceName === "dicomweb");
+    if (!dicomwebSource?.configuration) {
+      return;
+    }
+
+    dicomwebSource.configuration.qidoRoot = runtime.qidoRoot;
+    dicomwebSource.configuration.wadoRoot = runtime.wadoRoot;
+    dicomwebSource.configuration.wadoUriRoot = runtime.wadoUriRoot;
+    dicomwebSource.configuration.stowRoot = runtime.stowRoot;
+  }
+
   function persistLaunchToken(token) {
     try {
       window.sessionStorage.setItem(LAUNCH_STORAGE_KEY, token);
+      return true;
     } catch (error) {
       console.warn("Unable to persist launch token for login handoff.", error);
+      return false;
     }
   }
 
@@ -126,6 +165,20 @@
     } catch (error) {
       console.warn("Unable to clear stored launch token.", error);
     }
+  }
+
+  function normalizeViewerBasePath(value) {
+    if (!value) {
+      return null;
+    }
+
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const normalized = trimmed.replace(/\/+$/, "");
+    return normalized || "/";
   }
 
   function ensureLoader() {

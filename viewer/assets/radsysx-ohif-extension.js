@@ -11,6 +11,7 @@
   }
 
   const EXTENSION_ID = "@radsysx/extension-clinical";
+  const DEFAULT_DICOMWEB_NAMESPACE = "@ohif/extension-default.dataSourcesModule.dicomweb";
   const WORKSPACE_PANEL_ID = `${EXTENSION_ID}.panelModule.workspace`;
 
   class RadSysXWorkspacePanel extends HTMLElement {
@@ -375,17 +376,21 @@
         {
           name: "dicomweb",
           type: "webApi",
-          createDataSource(configuration) {
-            const defaultExtension = globalThis["ohif-extension-default"];
-            const defaultModule = defaultExtension
-              ?.getDataSourcesModule?.()
-              ?.find((module) => module.name === "dicomweb");
+          createDataSource(configuration, servicesManager, extensionManager) {
+            const defaultModule = extensionManager?.getModuleEntry?.(DEFAULT_DICOMWEB_NAMESPACE);
 
-            if (!defaultModule) {
+            if (!defaultModule?.createDataSource) {
               throw new Error("The default OHIF dicomweb data source is unavailable.");
             }
 
-            const dataSource = defaultModule.createDataSource(configuration);
+            const runtimeConfiguration = {
+              ...(configuration ?? {}),
+            };
+            const dataSource = defaultModule.createDataSource(
+              runtimeConfiguration,
+              servicesManager,
+              extensionManager,
+            );
             const originalInitialize = dataSource.initialize?.bind(dataSource);
             const originalGetStudyInstanceUIDs = dataSource.getStudyInstanceUIDs?.bind(dataSource);
             const originalRetrieveSeriesMetadata =
@@ -394,6 +399,7 @@
             if (originalInitialize) {
               dataSource.initialize = async function initialize(initArgs) {
                 await window.__RADSYSX_BOOTSTRAP_PROMISE__;
+                applyViewerRuntimeToDicomwebConfiguration(runtimeConfiguration);
                 return originalInitialize(initArgs);
               };
             }
@@ -512,9 +518,30 @@
       ...(args ?? {}),
       filters: {
         ...filters,
-        seriesInstanceUIDs,
+        seriesInstanceUID: seriesInstanceUIDs,
       },
     };
+  }
+
+  function applyViewerRuntimeToDicomwebConfiguration(configuration) {
+    const viewerRuntime = getViewerRuntime();
+    if (!viewerRuntime || !configuration) {
+      return configuration;
+    }
+
+    configuration.qidoRoot = viewerRuntime.qidoRoot || configuration.qidoRoot;
+    configuration.wadoRoot = viewerRuntime.wadoRoot || configuration.wadoRoot;
+    configuration.wadoUriRoot =
+      viewerRuntime.wadoUriRoot ||
+      viewerRuntime.wadoRoot ||
+      configuration.wadoUriRoot ||
+      configuration.wadoRoot;
+    configuration.stowRoot = viewerRuntime.stowRoot || configuration.stowRoot;
+    return configuration;
+  }
+
+  function getViewerRuntime() {
+    return window.__RADSYSX_VIEWER_RUNTIME__ ?? window.__RADSYSX_LAUNCH__?.viewerRuntime ?? null;
   }
 
   function getLaunchContext() {

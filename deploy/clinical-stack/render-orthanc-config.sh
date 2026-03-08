@@ -2,6 +2,8 @@
 
 set -eu
 
+# Keep this helper POSIX-sh compatible because the Orthanc image only guarantees /bin/sh.
+# Escape once for JSON string encoding, then again for the sed replacement payload.
 escape_json_sed() {
   printf '%s' "$1" | sed \
     -e 's/\\/\\\\/g' \
