@@ -20,26 +20,40 @@ Do not treat those surfaces as equivalent.
 Use these files first for clinical workflow changes:
 
 - `backend/server.py`
+- `backend/clinical/auth.py`
 - `backend/clinical/config.py`
 - `backend/clinical/contracts.py`
 - `backend/clinical/dicomweb.py`
 - `backend/clinical/models.py`
 - `backend/clinical/repositories.py`
+- `backend/clinical/seed_orthanc.py`
 - `backend/clinical/services.py`
 - `backend/tests/test_clinical_platform.py`
+- `docker-compose.yml`
+- `deploy/clinical-stack/nginx.conf`
+- `deploy/clinical-stack/orthanc.json`
+- `frontend/app/login/page.tsx`
 - `frontend/app/worklist/page.tsx`
 - `frontend/app/viewer/page.tsx`
 - `frontend/lib/clinical/client.ts`
 - `frontend/lib/clinical/contracts.ts`
 - `frontend/lib/env.ts`
+- `packages/clinical-web/src/client.ts`
+- `packages/clinical-web/src/contracts.ts`
+- `packages/clinical-web/src/env.ts`
+- `viewer/scripts/build-ohif-dist.mjs`
+- `viewer/assets/novion-bootstrap.js`
+- `viewer/assets/novion-bridge.js`
 
 Clinical workflow is now:
 
-1. Open `/worklist`.
-2. Create an opaque launch session via `POST /api/imaging/launch`.
-3. Resolve that session in `/viewer?launch=...` via `GET /api/imaging/launch/resolve`.
-4. Load study workspace state via `GET /api/studies/{studyUid}/workspace`.
-5. Persist reports, AI jobs, derived results, and audit events through backend contracts.
+1. Establish a clinical session via `POST /api/auth/local-login` and confirm it with `GET /api/auth/session`.
+2. Open `/worklist` in the Next.js shell.
+3. Create an opaque launch session via `POST /api/imaging/launch`.
+4. Resolve that session in `/viewer?launch=...` via `GET /api/imaging/launch/resolve`.
+5. Let the dedicated OHIF viewer app bind to the returned `viewerRuntime` and same-origin DICOMweb roots.
+6. Load study workspace state via `GET /api/studies/{studyUid}/workspace`.
+7. Persist reports, AI jobs, derived results, and audit events through backend contracts, including backend-mediated STOW via `POST /api/derived-results/stow`.
 
 ### Research path
 
@@ -95,6 +109,9 @@ The Prisma schema in `frontend/schema.prisma` is scaffolding for frontend-adjace
 
 Current core endpoints:
 
+- `GET /api/auth/session`
+- `POST /api/auth/local-login`
+- `POST /api/auth/logout`
 - `GET /api/platform/config`
 - `GET /api/worklist`
 - `POST /api/imaging/launch`
@@ -103,6 +120,7 @@ Current core endpoints:
 - `POST /api/reports/draft`
 - `POST /api/ai/jobs`
 - `POST /api/derived-results`
+- `POST /api/derived-results/stow`
 - `GET /api/audit/studies/{studyUid}`
 
 When extending clinical behavior, prefer adding to these contracts rather than inventing browser-local shortcuts.
@@ -113,22 +131,27 @@ When extending clinical behavior, prefer adding to these contracts rather than i
 
 Use:
 
+- `frontend/app/login/page.tsx` for seeded local persona login
 - `frontend/app/worklist/page.tsx` for the clinical worklist shell
-- `frontend/app/viewer/page.tsx` for the viewer host seam
-- `frontend/lib/clinical/client.ts` for backend clinical API calls
-- `frontend/lib/clinical/contracts.ts` for shared frontend types
+- `frontend/app/viewer/page.tsx` only as a migration/debug fallback
+- `packages/clinical-web/src/client.ts` for the shared backend clinical API client
+- `packages/clinical-web/src/contracts.ts` for shared frontend/viewer types
+- `packages/clinical-web/src/env.ts` for shared env helpers
 
 Do not treat `frontend/lib/api.ts` as the primary client for clinical flows. It still contains legacy prototype APIs and only re-exports the clinical client for convenience.
 
 ### Viewer direction
 
-`frontend/app/viewer/page.tsx` is not the final diagnostic viewer. It is the governed host seam that:
+The clinical public `/viewer` route is now owned by the dedicated OHIF app in `viewer/`, not by the Next.js page. The current viewer runtime is composed from:
 
-- resolves opaque launch tokens
-- loads the study workspace
-- keeps report/AI/derived-result actions in the backend boundary
+- `viewer/scripts/build-ohif-dist.mjs`
+- `viewer/assets/novion-bootstrap.js`
+- `viewer/assets/novion-bridge.js`
+- `packages/clinical-web/*`
 
-The long-term viewer target remains an OHIF-based surface behind the same launch contract.
+`frontend/app/viewer/page.tsx` remains only as a migration/debug fallback for the governed launch contract.
+
+OHIF is now the application shell for the clinical viewer path, but Novion-specific report/AI/derived-result UX still lives in the injected sidecar bridge rather than a deeper custom OHIF extension. Cornerstone remains the rendering and tooling substrate inside OHIF; it was not replaced.
 
 ### Research viewer
 
@@ -147,6 +170,12 @@ These are mandatory:
 
 If you are changing anything around DICOM, reporting, AI jobs, or launch/session handling, assume auditability and PHI boundaries matter first.
 
+Additional clinical rules:
+
+- Do not reintroduce browser-supplied `role`, `user_id`, `requestedBy`, or other actor identity inputs into governed clinical APIs.
+- Treat backend-issued signed session cookies as the source of clinical actor context until a real OIDC provider replaces the local issuer.
+- Keep DICOM SR and DICOM SEG writeback mediated by the backend rather than letting the browser store directly to Orthanc.
+
 ## Working Conventions
 
 ### Backend
@@ -158,7 +187,8 @@ If you are changing anything around DICOM, reporting, AI jobs, or launch/session
 ### Frontend
 
 - Use TypeScript strict mode patterns already present in the repo.
-- Import the clinical client from `@/lib/clinical/client` for clinical pages.
+- Prefer the shared workspace package in `packages/clinical-web` for contracts/client/env logic consumed by both Next.js and the OHIF viewer.
+- Import the clinical client from `@/lib/clinical/client` for Next.js clinical pages.
 - Keep viewer and worklist pages study-centric, not file-centric.
 
 ## Testing Guidance
@@ -167,9 +197,13 @@ Preferred focused checks for the clinical slice:
 
 - `python -m pytest backend/tests/test_clinical_platform.py`
 - `python -m compileall backend/clinical backend/server.py`
-- `cd frontend && npm run type-check`
+- `npm run type-check --workspace frontend`
+- `npm run type-check --workspace viewer`
+- `npm run build --workspace viewer`
 
 Use broader suites only when the change demands it.
+
+If Docker Desktop with WSL integration is available, also validate the composed stack with Orthanc and nginx rather than assuming the local shell/dev servers are equivalent.
 
 ## Commands
 
@@ -178,10 +212,23 @@ Use broader suites only when the change demands it.
 - `cd backend && python server.py`
 - `python -m pytest backend/tests/test_clinical_platform.py`
 
-### Frontend
+### Frontend / Workspace
 
-- `cd frontend && npm run dev`
-- `cd frontend && npm run type-check`
+- `npm install --legacy-peer-deps`
+- `npm run dev --workspace frontend`
+- `npm run dev --workspace viewer`
+- `npm run type-check --workspace frontend`
+- `npm run type-check --workspace viewer`
+- `npm run build --workspace viewer`
+
+### Local Clinical Stack
+
+- `docker compose up --build`
+- clinical public origin: `http://localhost:3000`
+- Next.js shell: `/`
+- OHIF viewer: `/viewer`
+- FastAPI: `/api`
+- Orthanc DICOMweb: `/dicom-web`
 
 ## Avoid These Wrong Assumptions
 
@@ -198,13 +245,29 @@ The current implemented foundation covers:
 
 - mode-aware clinical boundaries
 - SQLAlchemy-backed clinical persistence
+- local signed-cookie session auth with OIDC-shaped claims
 - opaque launch session creation and resolution
 - study workspace aggregation
+- shared browser-side clinical package in `packages/clinical-web`
+- dedicated OHIF-based clinical viewer workspace in `viewer/`
+- backend-mediated STOW handling for uploaded derived DICOM instances
+- local nginx/Orthanc compose scaffolding for a one-origin clinical runtime
 - persisted report, AI, derived-result, and audit actions
 
 The next major steps are:
 
-- replace the viewer host with OHIF while preserving the launch contract
-- connect Orthanc/DICOMweb beyond logical storage stubs
-- move from local seeded data to real institutional integration
+- replace the current injected viewer bridge with native Novion OHIF extension and mode code
+- wire OHIF measurement tracking and segmentation services directly into governed SR/SEG export and reload flows
+- validate the full one-origin clinical stack end to end with Docker and Orthanc
+- move from local seeded auth/worklist context to real institutional identity and integration
 - continue phasing out prototype-only routes from any clinical deployment path
+
+## Recommended Next Tranche Plan
+
+If starting fresh after Phase 3, do the next tranche in this order:
+
+1. Update documentation first: keep this file and any top-level clinical runtime docs aligned with the actual Phase 3 architecture so future work does not plan against stale assumptions.
+2. Deepen the OHIF integration: move report, AI, derived-result, and audit workflow UI from the injected bridge into native OHIF extension and mode seams while preserving the current opaque launch contract and backend-authoritative workspace behavior.
+3. Finish standards-native writeback: connect OHIF measurement tracking and segmentation flows to backend-mediated SR/SEG export through `POST /api/derived-results/stow`, then rehydrate those stored objects from Orthanc on reload.
+4. Validate the real local stack: run the nginx + frontend + viewer + backend + Orthanc compose stack and prove the end-to-end workflow for login, worklist launch, OHIF load, report save/finalize, shadow AI queueing, SR persistence, SEG persistence, workspace refresh, and audit visibility.
+5. Only after viewer/archive realism is stable, move to institutional identity/context: replace the seeded local personas with real identity/provider integration and begin the shift from seeded worklist data toward institutional context.
