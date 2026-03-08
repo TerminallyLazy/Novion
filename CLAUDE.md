@@ -28,8 +28,13 @@ The clinical path is the migration target. Do not plan against research-only sea
   - `viewer/assets/radsysx-bootstrap.js`
   - `viewer/assets/radsysx-ohif-extension.js`
   - `viewer/assets/radsysx-ohif-mode.js`
-  - `viewer/assets/radsysx-viewer.css`
+- `viewer/assets/radsysx-viewer.css`
 - Supported clinical `/viewer` fallback: none
+
+## Python Baseline
+
+- Use Python `3.12` when the same environment needs both `backend/requirements-clinical.txt` and `backend/requirements.txt`.
+- Python `3.13` is acceptable for the governed clinical bootstrap path only.
 
 ## Critical Rules
 

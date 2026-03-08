@@ -1,3 +1,6 @@
+# Full RadSysX backend dependency set, including research/agent/audio extras.
+# For governed clinical bootstrap and Linux clinical validation, prefer
+# `backend/requirements-clinical.txt`.
 aiofiles==23.2.1
 aiohappyeyeballs==2.4.6
 aiohttp==3.13.3

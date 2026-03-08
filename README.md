@@ -206,7 +206,8 @@ Operational guidance:
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.12 if you need one interpreter for both the clinical and research/backend installs
+- Python 3.13 is acceptable for the clinical bootstrap path only
 - Node.js 20+
 - npm
 - Docker Engine with Compose plugin if you want the one-origin stack
@@ -217,11 +218,21 @@ Operational guidance:
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -r backend/requirements.txt
+python3 -m pip install -r backend/requirements-clinical.txt
 npm install --legacy-peer-deps
 ```
 
 Backend dependencies should be installed into `.venv`, not into ad hoc machine-local paths.
+`backend/requirements-clinical.txt` is the governed clinical bootstrap set. `backend/requirements.txt` remains the broader research/agent dependency set and may carry tighter interpreter constraints than the clinical slice.
+
+### Install the full backend/runtime dependency set
+
+If you want one local Python environment that can exercise both the governed clinical backend and the broader research/agent surface, use Python `3.12` and then install the full backend set:
+
+```bash
+. .venv/bin/activate
+python3 -m pip install -r backend/requirements.txt
+```
 
 ### Run backend directly
 
@@ -231,6 +242,15 @@ python3 backend/server.py
 ```
 
 ### Run the research shell directly
+
+```bash
+export RADSYSX_APP_MODE=research
+export NEXT_PUBLIC_RADSYSX_APP_MODE=research
+. .venv/bin/activate
+python3 backend/server.py
+```
+
+In a second terminal:
 
 ```bash
 npm run dev --workspace frontend
@@ -261,6 +281,25 @@ export RADSYSX_ORTHANC_USERNAME=local-user
 export RADSYSX_ORTHANC_PASSWORD=local-pass
 docker compose up --build
 ```
+
+This compose stack validates the governed clinical surface only. It does not install or exercise the full research/agent backend dependency set.
+
+### Recommended whole-runtime validation order
+
+If you need to test both RadSysX surfaces on the same Linux host, use Python `3.12` and run:
+
+1. `python3 -m venv .venv`
+2. `. .venv/bin/activate`
+3. `python3 -m pip install --upgrade pip`
+4. `python3 -m pip install -r backend/requirements.txt`
+5. `npm install --legacy-peer-deps`
+6. `python3 -m compileall backend/clinical backend/server.py backend/radsysx.py`
+7. `python3 -m pytest backend/tests/test_clinical_platform.py`
+8. `npm run type-check --workspace frontend`
+9. `npm run type-check --workspace viewer`
+10. `npm run build --workspace viewer`
+11. Start the research surface directly with `RADSYSX_APP_MODE=research python3 backend/server.py` plus `NEXT_PUBLIC_RADSYSX_APP_MODE=research npm run dev --workspace frontend`
+12. Separately validate the governed clinical surface with `docker compose up --build`
 
 ### First Linux Validation Pass
 

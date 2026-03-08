@@ -30,12 +30,19 @@ except Exception as exc:
     def enable_disable_mcp(enabled: bool):  # type: ignore
         return f"MCP toggle unavailable because RadSysX failed to import: {exc}"
 
+MCP_IMPORT_ERROR = None
+
 try:
     from backend.mcp.fhir_server import FHIRMCPServer  # type: ignore
     from backend.mcp.client import RadSysXMCPClient  # type: ignore
-except ModuleNotFoundError:
-    from mcp.fhir_server import FHIRMCPServer
-    from mcp.client import RadSysXMCPClient
+except Exception:
+    try:
+        from mcp.fhir_server import FHIRMCPServer
+        from mcp.client import RadSysXMCPClient
+    except Exception as exc:
+        MCP_IMPORT_ERROR = exc
+        FHIRMCPServer = None  # type: ignore[assignment]
+        RadSysXMCPClient = None  # type: ignore[assignment]
 
 CHAT_IMPORT_ERROR = None
 
@@ -104,6 +111,38 @@ settings = get_settings()
 session_manager = ClinicalSessionManager(settings)
 
 app = FastAPI(title="RadSysX API")
+
+
+class _FallbackFHIRServer:
+    available = False
+
+    def __init__(self, reason: Exception | str) -> None:
+        self.unavailable_reason = str(reason)
+
+    async def initialize(self):
+        return None
+
+    async def list_resources(self):
+        return {"error": f"FHIR integration unavailable: {self.unavailable_reason}"}
+
+    async def get_patient_demographics(self, patient_id: str):
+        return {
+            "error": f"FHIR integration unavailable: {self.unavailable_reason}",
+            "patient_id": patient_id,
+        }
+
+    async def get_medication_list(self, patient_id: str):
+        return {
+            "error": f"FHIR integration unavailable: {self.unavailable_reason}",
+            "patient_id": patient_id,
+        }
+
+    async def search_resources(self, resource_type: str, search_params: dict):
+        return {
+            "error": f"FHIR integration unavailable: {self.unavailable_reason}",
+            "resource_type": resource_type,
+            "params": search_params,
+        }
 
 # Define the path to frontend files
 frontend_dir = pathlib.Path(__file__).parent.parent / "frontend"
@@ -257,29 +296,11 @@ async def stream(request: Request):
 
 # Create FHIR server instance for handling tool requests
 try:
+    if FHIRMCPServer is None:
+        raise RuntimeError(MCP_IMPORT_ERROR or "FHIR/MCP imports are unavailable.")
     fhir_server = FHIRMCPServer()
 except Exception as exc:
-    class _FallbackFHIRServer:
-        async def initialize(self):
-            return None
-
-        async def list_resources(self):
-            return {"error": f"FHIR integration unavailable: {exc}"}
-
-        async def get_patient_demographics(self, patient_id: str):
-            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
-
-        async def get_medication_list(self, patient_id: str):
-            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
-
-        async def search_resources(self, resource_type: str, search_params: dict):
-            return {
-                "error": f"FHIR integration unavailable: {exc}",
-                "resource_type": resource_type,
-                "params": search_params,
-            }
-
-    fhir_server = _FallbackFHIRServer()
+    fhir_server = _FallbackFHIRServer(exc)
 clinical_repository = ClinicalRepository(settings.clinical_database_url)
 clinical_service = ClinicalPlatformService(
     settings=settings,
@@ -292,16 +313,23 @@ clinical_repository.initialize()
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
-    try:
-        # Initialize the FHIR server
+    if RADSYSX_IMPORT_ERROR is not None:
+        print(f"Research agent stack unavailable: {RADSYSX_IMPORT_ERROR}")
+
+    if getattr(fhir_server, "available", True):
         await asyncio.to_thread(fhir_server.initialize)
         print("✅ FHIR server initialized and MCP integration enabled")
-        
-        # Initialize chat interface
+    else:
+        print(
+            "FHIR/MCP integration unavailable: "
+            f"{getattr(fhir_server, 'unavailable_reason', 'unknown reason')}"
+        )
+
+    if CHAT_IMPORT_ERROR is None:
         initialize_chat_interface()
         print("✅ Chat interface initialized")
-    except Exception as e:
-        print(f"Error initializing services: {e}")
+    else:
+        print(f"Chat interface unavailable: {CHAT_IMPORT_ERROR}")
 
 
 def _client_ip(request: Request) -> str:
