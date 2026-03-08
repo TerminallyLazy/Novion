@@ -5,9 +5,9 @@ export {
   getViewerBaseUrl,
   isExperimentalImagingEnabled,
   isResearchMode,
-} from "@novion/clinical-web/env";
-export type { AppMode } from "@novion/clinical-web/env";
-import { getAppMode } from "@novion/clinical-web/env";
+} from "@radsysx/clinical-web/env";
+export type { AppMode } from "@radsysx/clinical-web/env";
+import { getAppMode } from "@radsysx/clinical-web/env";
 
 export function getGeminiApiKey(): string {
   const apiKey = process.env.GEMINI_API_KEY;

@@ -20,8 +20,8 @@ services:
     environment:
       NEXT_PUBLIC_BACKEND_URL: ""
       NEXT_PUBLIC_VIEWER_BASE_URL: "/viewer"
-      NEXT_PUBLIC_NOVION_APP_MODE: "clinical"
-      NOVION_APP_MODE: "clinical"
+      NEXT_PUBLIC_RADSYSX_APP_MODE: "clinical"
+      RADSYSX_APP_MODE: "clinical"
     volumes:
       - .:/workspace
 
@@ -41,23 +41,34 @@ services:
       bash -lc "pip install --no-cache-dir -r backend/requirements.txt &&
       uvicorn backend.server:app --host 0.0.0.0 --port 8000"
     environment:
-      NOVION_APP_MODE: "clinical"
-      NOVION_VIEWER_BASE_URL: "http://localhost:3000/viewer"
-      NOVION_VIEWER_BASE_PATH: "/viewer"
-      NOVION_DICOMWEB_PUBLIC_BASE_URL: "/dicom-web"
-      NOVION_DICOMWEB_QIDO_ROOT: "/dicom-web"
-      NOVION_DICOMWEB_WADO_ROOT: "/dicom-web"
-      NOVION_DICOMWEB_WADO_URI_ROOT: "/dicom-web"
-      NOVION_DICOMWEB_STOW_ROOT: "/dicom-web"
-      NOVION_ALLOWED_ORIGINS: "http://localhost:3000"
-      ORTHANC_DICOMWEB_URL: "http://orthanc:8042/dicom-web"
-      ORTHANC_USERNAME: "orthanc"
-      ORTHANC_PASSWORD: "orthanc"
+      RADSYSX_APP_MODE: "clinical"
+      RADSYSX_CLINICAL_API_SECRET: "${RADSYSX_CLINICAL_API_SECRET:-radsysx-clinical-local-compose-secret}"
+      RADSYSX_VIEWER_BASE_URL: "http://localhost:3000/viewer"
+      RADSYSX_VIEWER_BASE_PATH: "/viewer"
+      RADSYSX_SESSION_COOKIE_SECURE: "false"
+      RADSYSX_DICOMWEB_PUBLIC_BASE_URL: "/dicom-web"
+      RADSYSX_DICOMWEB_QIDO_ROOT: "/dicom-web"
+      RADSYSX_DICOMWEB_WADO_ROOT: "/dicom-web"
+      RADSYSX_DICOMWEB_WADO_URI_ROOT: "/dicom-web"
+      RADSYSX_DICOMWEB_STOW_ROOT: "/dicom-web"
+      RADSYSX_ALLOWED_ORIGINS: "http://localhost:3000"
+      RADSYSX_ORTHANC_DICOMWEB_URL: "http://orthanc:8042/dicom-web"
+      RADSYSX_ORTHANC_USERNAME: "${RADSYSX_ORTHANC_USERNAME:?Set RADSYSX_ORTHANC_USERNAME}"
+      RADSYSX_ORTHANC_PASSWORD: "${RADSYSX_ORTHANC_PASSWORD:?Set RADSYSX_ORTHANC_PASSWORD}"
     volumes:
       - .:/workspace
 
   orthanc:
     image: jodogne/orthanc-plugins:1.12.10
+    environment:
+      RADSYSX_ORTHANC_USERNAME: "${RADSYSX_ORTHANC_USERNAME:?Set RADSYSX_ORTHANC_USERNAME}"
+      RADSYSX_ORTHANC_PASSWORD: "${RADSYSX_ORTHANC_PASSWORD:?Set RADSYSX_ORTHANC_PASSWORD}"
+    command: >
+      sh -lc "sed
+      -e 's/__RADSYSX_ORTHANC_USERNAME__/$$RADSYSX_ORTHANC_USERNAME/g'
+      -e 's/__RADSYSX_ORTHANC_PASSWORD__/$$RADSYSX_ORTHANC_PASSWORD/g'
+      /etc/orthanc/orthanc.json > /tmp/orthanc.json &&
+      Orthanc /tmp/orthanc.json"
     volumes:
       - ./deploy/clinical-stack/orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc-storage:/var/lib/orthanc/db
@@ -71,9 +82,9 @@ services:
       bash -lc "pip install --no-cache-dir httpx pydicom &&
       python backend/clinical/seed_orthanc.py"
     environment:
-      ORTHANC_DICOMWEB_URL: "http://orthanc:8042/dicom-web"
-      ORTHANC_USERNAME: "orthanc"
-      ORTHANC_PASSWORD: "orthanc"
+      RADSYSX_ORTHANC_DICOMWEB_URL: "http://orthanc:8042/dicom-web"
+      RADSYSX_ORTHANC_USERNAME: "${RADSYSX_ORTHANC_USERNAME:?Set RADSYSX_ORTHANC_USERNAME}"
+      RADSYSX_ORTHANC_PASSWORD: "${RADSYSX_ORTHANC_PASSWORD:?Set RADSYSX_ORTHANC_PASSWORD}"
     volumes:
       - .:/workspace
 

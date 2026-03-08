@@ -1,1 +1,1 @@
-export type * from "@novion/clinical-web/contracts";
+export type * from "@radsysx/clinical-web/contracts";

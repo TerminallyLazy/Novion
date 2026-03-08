@@ -1,4 +1,4 @@
-# Novion Agent Guidance
+# RadSysX Agent Guidance
 
 Last updated: 2026-03-08
 
@@ -6,7 +6,7 @@ This file replaces older reconnaissance notes that no longer describe the active
 
 ## Project Posture
 
-Novion currently has two parallel product surfaces:
+RadSysX currently has two parallel product surfaces:
 
 - `research` surface: rapid experimentation, legacy viewer flows, browser-side AI prototypes.
 - `clinical` foundation: governed FastAPI contracts, worklist-driven launch, opaque viewer sessions, audited report and AI workflow state.
@@ -34,7 +34,6 @@ Use these files first for clinical workflow changes:
 - `deploy/clinical-stack/orthanc.json`
 - `frontend/app/login/page.tsx`
 - `frontend/app/worklist/page.tsx`
-- `frontend/app/viewer/page.tsx`
 - `frontend/lib/clinical/client.ts`
 - `frontend/lib/clinical/contracts.ts`
 - `frontend/lib/env.ts`
@@ -42,8 +41,10 @@ Use these files first for clinical workflow changes:
 - `packages/clinical-web/src/contracts.ts`
 - `packages/clinical-web/src/env.ts`
 - `viewer/scripts/build-ohif-dist.mjs`
-- `viewer/assets/novion-bootstrap.js`
-- `viewer/assets/novion-bridge.js`
+- `viewer/assets/radsysx-bootstrap.js`
+- `viewer/assets/radsysx-ohif-extension.js`
+- `viewer/assets/radsysx-ohif-mode.js`
+- `viewer/assets/radsysx-viewer.css`
 
 Clinical workflow is now:
 
@@ -57,7 +58,7 @@ Clinical workflow is now:
 
 ### Research path
 
-These routes/components are still valid for experimentation, but they are not the authoritative clinical path:
+These routes/components are still valid for experimentation, but they are not the authoritative clinical path and should not be reintroduced as clinical viewer fallbacks:
 
 - `frontend/app/page.tsx`
 - `frontend/components/core/CoreViewer.tsx`
@@ -70,7 +71,7 @@ Research-only routes must stay gated outside `pilot` and `clinical` modes.
 
 ## Runtime Modes
 
-Mode is controlled by `NOVION_APP_MODE`:
+Mode is controlled by `RADSYSX_APP_MODE`:
 
 - `research`
 - `pilot`
@@ -95,11 +96,22 @@ Rules:
 - `services.py`: launch, workspace, report, AI, derived-result, and audit orchestration.
 - `dicomweb.py`: DICOMweb adapter boundary. Orthanc is the reference adapter.
 
+### Research / agent backend
+
+The repo still includes a research/agent backend surface outside the clinical authority path:
+
+- `backend/radsysx.py`: multi-agent research orchestration
+- `backend/chat_interface.py`: direct chat interface
+- `backend/mcp/*`: MCP/FHIR integrations and installer paths
+- `backend/biomedparse_api.py`: research imaging/AI analysis router
+
+Keep these seams available for experimentation, but do not use them as shortcuts around the clinical contracts.
+
 ### Persistence
 
 Clinical backend persistence is currently SQLAlchemy-backed and defaults to:
 
-- `backend/novion_clinical.db`
+- `backend/radsysx_clinical.db`
 
 This file is a local dev artifact and must not be committed.
 
@@ -133,7 +145,7 @@ Use:
 
 - `frontend/app/login/page.tsx` for seeded local persona login
 - `frontend/app/worklist/page.tsx` for the clinical worklist shell
-- `frontend/app/viewer/page.tsx` only as a migration/debug fallback
+- `frontend/app/page.tsx` only as a landing/surface selector, not as a viewer runtime
 - `packages/clinical-web/src/client.ts` for the shared backend clinical API client
 - `packages/clinical-web/src/contracts.ts` for shared frontend/viewer types
 - `packages/clinical-web/src/env.ts` for shared env helpers
@@ -142,16 +154,18 @@ Do not treat `frontend/lib/api.ts` as the primary client for clinical flows. It 
 
 ### Viewer direction
 
-The clinical public `/viewer` route is now owned by the dedicated OHIF app in `viewer/`, not by the Next.js page. The current viewer runtime is composed from:
+The clinical public `/viewer` route is owned exclusively by the dedicated OHIF app in `viewer/`. The current viewer runtime is composed from:
 
 - `viewer/scripts/build-ohif-dist.mjs`
-- `viewer/assets/novion-bootstrap.js`
-- `viewer/assets/novion-bridge.js`
+- `viewer/assets/radsysx-bootstrap.js`
+- `viewer/assets/radsysx-ohif-extension.js`
+- `viewer/assets/radsysx-ohif-mode.js`
+- `viewer/assets/radsysx-viewer.css`
 - `packages/clinical-web/*`
 
-`frontend/app/viewer/page.tsx` remains only as a migration/debug fallback for the governed launch contract.
+There is no supported Next.js `/viewer` fallback route anymore.
 
-OHIF is now the application shell for the clinical viewer path, but Novion-specific report/AI/derived-result UX still lives in the injected sidecar bridge rather than a deeper custom OHIF extension. Cornerstone remains the rendering and tooling substrate inside OHIF; it was not replaced.
+OHIF is now the application shell for the clinical viewer path, and RadSysX-specific report/AI/derived-result workflow UI is mounted through RadSysX-owned OHIF panel extension/mode assets instead of an injected sidecar. Cornerstone remains the rendering and tooling substrate inside OHIF; it was not replaced.
 
 ### Research viewer
 
@@ -256,7 +270,8 @@ The current implemented foundation covers:
 
 The next major steps are:
 
-- replace the current injected viewer bridge with native Novion OHIF extension and mode code
+- keep docs and operational guidance aligned with the shipped RadSysX runtime
+- continue deepening the RadSysX OHIF extension/mode code and reduce any remaining bootstrap-only seams
 - wire OHIF measurement tracking and segmentation services directly into governed SR/SEG export and reload flows
 - validate the full one-origin clinical stack end to end with Docker and Orthanc
 - move from local seeded auth/worklist context to real institutional identity and integration
@@ -266,8 +281,8 @@ The next major steps are:
 
 If starting fresh after Phase 3, do the next tranche in this order:
 
-1. Update documentation first: keep this file and any top-level clinical runtime docs aligned with the actual Phase 3 architecture so future work does not plan against stale assumptions.
-2. Deepen the OHIF integration: move report, AI, derived-result, and audit workflow UI from the injected bridge into native OHIF extension and mode seams while preserving the current opaque launch contract and backend-authoritative workspace behavior.
-3. Finish standards-native writeback: connect OHIF measurement tracking and segmentation flows to backend-mediated SR/SEG export through `POST /api/derived-results/stow`, then rehydrate those stored objects from Orthanc on reload.
+1. Keep the hardening/docs pass current with the shipped RadSysX runtime: secrets, auth mode enforcement, cookie posture, URL secrecy, streamed STOW handoff, and de-identified local scaffolding.
+2. Deepen the OHIF-native integration: move any remaining viewer-specific workflow logic from bootstrap-time helpers into extension/mode/service seams while preserving the opaque launch contract and backend-authoritative workspace behavior.
+3. Finish standards-native writeback: connect OHIF measurement tracking and segmentation flows directly to backend-mediated SR/SEG export through `POST /api/derived-results/stow`, then rehydrate those stored objects from Orthanc on reload.
 4. Validate the real local stack: run the nginx + frontend + viewer + backend + Orthanc compose stack and prove the end-to-end workflow for login, worklist launch, OHIF load, report save/finalize, shadow AI queueing, SR persistence, SEG persistence, workspace refresh, and audit visibility.
 5. Only after viewer/archive realism is stable, move to institutional identity/context: replace the seeded local personas with real identity/provider integration and begin the shift from seeded worklist data toward institutional context.

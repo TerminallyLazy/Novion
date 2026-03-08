@@ -1,0 +1,439 @@
+// @ts-check
+
+/** @typedef {import("@radsysx/clinical-web/contracts").ImagingLaunchResolveResponse} ImagingLaunchResolveResponse */
+/** @typedef {import("@radsysx/clinical-web/contracts").StudyWorkspace} StudyWorkspace */
+/** @typedef {import("@radsysx/clinical-web/contracts").ReportRecord} ReportRecord */
+
+(function radsysxOHIFExtension() {
+  const React = window.React;
+  if (!React) {
+    throw new Error("The RadSysX OHIF extension requires React to be available globally.");
+  }
+
+  const EXTENSION_ID = "@radsysx/extension-clinical";
+  const WORKSPACE_PANEL_ID = `${EXTENSION_ID}.panelModule.workspace`;
+
+  class RadSysXWorkspacePanel extends HTMLElement {
+    connectedCallback() {
+      if (this.dataset.connected === "true") {
+        return;
+      }
+
+      this.dataset.connected = "true";
+      this.classList.add("radsysx-panel-root");
+      this.state = {
+        workspace: /** @type {StudyWorkspace | null} */ (null),
+        message: /** @type {string | null} */ (null),
+        error: /** @type {string | null} */ (null),
+        loading: true,
+        draftFindings: "",
+        draftImpression: "",
+      };
+      this.render();
+      window.__RADSYSX_CLEAN_VIEWER_URL__?.();
+      void this.refreshWorkspace();
+    }
+
+    latestReport() {
+      return this.state.workspace?.reports?.[0] ?? null;
+    }
+
+    hydrateDrafts() {
+      const report = this.latestReport();
+      if (!report) {
+        return;
+      }
+      this.state.draftFindings = report.findingsSummary ?? "";
+      this.state.draftImpression = report.impression ?? "";
+    }
+
+    resolvedLaunch() {
+      return /** @type {ImagingLaunchResolveResponse | undefined} */ (window.__RADSYSX_LAUNCH__);
+    }
+
+    featureFlags() {
+      return this.resolvedLaunch()?.viewerRuntime?.featureFlags ?? {};
+    }
+
+    async refreshWorkspace() {
+      const resolved = this.resolvedLaunch();
+      if (!resolved) {
+        this.state.loading = false;
+        this.state.error = "Viewer launch context is unavailable.";
+        this.render();
+        return;
+      }
+
+      try {
+        this.state.loading = true;
+        this.render();
+        this.state.workspace = await requestJson(
+          `/api/studies/${encodeURIComponent(resolved.context.studyInstanceUID)}/workspace`,
+        );
+        this.hydrateDrafts();
+        this.state.error = null;
+      } catch (error) {
+        this.state.error = error instanceof Error ? error.message : "Unable to load workspace.";
+      } finally {
+        this.state.loading = false;
+        this.render();
+        const loader = document.getElementById("radsysx-loader");
+        if (loader) {
+          loader.remove();
+        }
+      }
+    }
+
+    async saveReport(status) {
+      const resolved = this.resolvedLaunch();
+      if (!resolved) {
+        return;
+      }
+
+      this.state.message = null;
+      this.state.error = null;
+      const findings = /** @type {HTMLTextAreaElement | null} */ (
+        this.querySelector("#radsysx-findings")
+      );
+      const impression = /** @type {HTMLTextAreaElement | null} */ (
+        this.querySelector("#radsysx-impression")
+      );
+      this.state.draftFindings = findings?.value ?? "";
+      this.state.draftImpression = impression?.value ?? "";
+
+      try {
+        const report = this.latestReport();
+        await requestJson("/api/reports/draft", {
+          method: "POST",
+          body: JSON.stringify({
+            reportId: report?.reportId,
+            studyInstanceUID: resolved.context.studyInstanceUID,
+            status,
+            findingsSummary: this.state.draftFindings,
+            impression: this.state.draftImpression,
+          }),
+        });
+        this.state.message =
+          status === "final"
+            ? "Report finalized through the governed backend contract."
+            : "Draft report saved.";
+        await this.refreshWorkspace();
+      } catch (error) {
+        this.state.error = error instanceof Error ? error.message : "Unable to save the report.";
+        this.render();
+      }
+    }
+
+    async queueShadowTriage() {
+      const resolved = this.resolvedLaunch();
+      if (!resolved) {
+        return;
+      }
+
+      this.state.message = null;
+      this.state.error = null;
+      try {
+        await requestJson("/api/ai/jobs", {
+          method: "POST",
+          body: JSON.stringify({
+            kind: "triage",
+            workflowMode: "shadow",
+            studyInstanceUID: resolved.context.studyInstanceUID,
+            modelId: "triage-model",
+            modelVersion: "1.0.0",
+            inputHash: `study:${resolved.context.studyInstanceUID}:shadow`,
+          }),
+        });
+        this.state.message = "Shadow triage queued.";
+        await this.refreshWorkspace();
+      } catch (error) {
+        this.state.error = error instanceof Error ? error.message : "Unable to queue AI job.";
+        this.render();
+      }
+    }
+
+    async uploadDerived(objectType, storageClass, inputId) {
+      const resolved = this.resolvedLaunch();
+      if (!resolved) {
+        return;
+      }
+
+      this.state.message = null;
+      this.state.error = null;
+      const input = /** @type {HTMLInputElement | null} */ (this.querySelector(`#${inputId}`));
+      const file = input?.files?.[0];
+      if (!file) {
+        this.state.error = `Select a ${storageClass} DICOM file first.`;
+        this.render();
+        return;
+      }
+
+      const form = new FormData();
+      form.set("studyInstanceUID", resolved.context.studyInstanceUID);
+      form.set("objectType", objectType);
+      form.set("storageClass", storageClass);
+      form.set("metadata", JSON.stringify({ source: "radsysx-ohif-panel" }));
+      form.append("files", file, file.name);
+
+      try {
+        const response = await fetch("/api/derived-results/stow", {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+        if (!response.ok) {
+          throw new Error((await response.text()) || "STOW request failed.");
+        }
+        this.state.message = `${storageClass} persisted through backend STOW.`;
+        await this.refreshWorkspace();
+      } catch (error) {
+        this.state.error =
+          error instanceof Error ? error.message : "Unable to persist derived DICOM.";
+        this.render();
+      }
+    }
+
+    bindActions() {
+      this.querySelector("[data-action='refresh']")?.addEventListener("click", () => {
+        this.state.message = null;
+        void this.refreshWorkspace();
+      });
+      this.querySelector("[data-action='save-draft']")?.addEventListener("click", () => {
+        void this.saveReport("draft");
+      });
+      this.querySelector("[data-action='finalize-report']")?.addEventListener("click", () => {
+        void this.saveReport("final");
+      });
+      this.querySelector("[data-action='queue-ai']")?.addEventListener("click", () => {
+        void this.queueShadowTriage();
+      });
+      this.querySelector("[data-action='upload-sr']")?.addEventListener("click", () => {
+        void this.uploadDerived("sr", "SR", "radsysx-upload-sr");
+      });
+      this.querySelector("[data-action='upload-seg']")?.addEventListener("click", () => {
+        void this.uploadDerived("seg", "SEG", "radsysx-upload-seg");
+      });
+    }
+
+    render() {
+      const resolved = this.resolvedLaunch();
+      const report = this.latestReport();
+      const flags = this.featureFlags();
+      const workspace = this.state.workspace;
+      const auditItems = workspace?.audit?.slice(0, 8) ?? [];
+
+      this.innerHTML = `
+        <div class="radsysx-panel-shell">
+          <div class="radsysx-panel-header">
+            <div>
+              <div class="radsysx-panel-kicker">RadSysX Clinical Workspace</div>
+              <div class="radsysx-panel-title">${escapeHtml(
+                resolved?.context.accessionNumber ?? "Governed viewer session",
+              )}</div>
+              <div class="radsysx-panel-subtitle">
+                ${escapeHtml(resolved?.viewerRuntime.viewerKind ?? "ohif")} runtime
+              </div>
+            </div>
+            <button class="radsysx-ghost-button" data-action="refresh" type="button">
+              Refresh
+            </button>
+          </div>
+
+          ${
+            this.state.loading
+              ? '<div class="radsysx-status">Loading governed workspace state...</div>'
+              : ""
+          }
+          ${
+            this.state.message
+              ? `<div class="radsysx-status radsysx-status-success">${escapeHtml(this.state.message)}</div>`
+              : ""
+          }
+          ${
+            this.state.error
+              ? `<div class="radsysx-status radsysx-status-error">${escapeHtml(this.state.error)}</div>`
+              : ""
+          }
+
+          ${
+            flags.reportPanel !== false
+              ? `
+                <section class="radsysx-section">
+                  <div class="radsysx-section-title">Report</div>
+                  <label class="radsysx-field">
+                    <span>Findings</span>
+                    <textarea id="radsysx-findings" rows="5">${escapeHtml(this.state.draftFindings)}</textarea>
+                  </label>
+                  <label class="radsysx-field">
+                    <span>Impression</span>
+                    <textarea id="radsysx-impression" rows="4">${escapeHtml(this.state.draftImpression)}</textarea>
+                  </label>
+                  <div class="radsysx-row">
+                    <button class="radsysx-primary-button" data-action="save-draft" type="button">Save draft</button>
+                    <button class="radsysx-ghost-button" data-action="finalize-report" type="button">Finalize</button>
+                  </div>
+                  <div class="radsysx-caption">
+                    Latest status: ${escapeHtml(report?.status ?? "No report yet")}
+                  </div>
+                </section>
+              `
+              : ""
+          }
+
+          ${
+            flags.aiPanel !== false || flags.derivedPanel !== false
+              ? `
+                <section class="radsysx-section">
+                  <div class="radsysx-section-title">Assistive Actions</div>
+                  ${
+                    flags.aiPanel !== false
+                      ? `
+                        <div class="radsysx-row radsysx-row-stack">
+                          <button class="radsysx-ghost-button" data-action="queue-ai" type="button">
+                            Queue shadow triage
+                          </button>
+                        </div>
+                        <div class="radsysx-list">
+                          ${renderItems(
+                            workspace?.aiJobs?.map((item) => ({
+                              title: `${item.kind} · ${item.workflowMode}`,
+                              body: `${item.jobId} · ${item.status}`,
+                            })),
+                            "No governed AI jobs queued.",
+                          )}
+                        </div>
+                      `
+                      : ""
+                  }
+                  ${
+                    flags.derivedPanel !== false
+                      ? `
+                        <div class="radsysx-upload-block">
+                          <label class="radsysx-upload-label">
+                            <span>Upload DICOM SR</span>
+                            <input id="radsysx-upload-sr" type="file" accept=".dcm,application/dicom" />
+                          </label>
+                          <button class="radsysx-ghost-button" data-action="upload-sr" type="button">STOW SR</button>
+                        </div>
+                        <div class="radsysx-upload-block">
+                          <label class="radsysx-upload-label">
+                            <span>Upload DICOM SEG</span>
+                            <input id="radsysx-upload-seg" type="file" accept=".dcm,application/dicom" />
+                          </label>
+                          <button class="radsysx-ghost-button" data-action="upload-seg" type="button">STOW SEG</button>
+                        </div>
+                        <div class="radsysx-list">
+                          ${renderItems(
+                            workspace?.derivedResults?.map((item) => ({
+                              title: `${item.objectType} · ${item.storageClass}`,
+                              body: item.payloadRef ?? item.id,
+                            })),
+                            "No derived DICOM objects persisted.",
+                          )}
+                        </div>
+                      `
+                      : ""
+                  }
+                </section>
+              `
+              : ""
+          }
+
+          ${
+            flags.auditPanel !== false
+              ? `
+                <section class="radsysx-section">
+                  <div class="radsysx-section-title">Audit</div>
+                  <div class="radsysx-list">
+                    ${renderItems(
+                      auditItems.map((item) => ({
+                        title: item.action,
+                        body: `${item.actorUserId} · ${formatDate(item.occurredAt)}`,
+                      })),
+                      "No audit events recorded yet.",
+                    )}
+                  </div>
+                </section>
+              `
+              : ""
+          }
+        </div>
+      `;
+
+      this.bindActions();
+    }
+  }
+
+  if (!customElements.get("radsysx-workspace-panel")) {
+    customElements.define("radsysx-workspace-panel", RadSysXWorkspacePanel);
+  }
+
+  window.__RADSYSX_OHIF_EXTENSION__ = {
+    id: EXTENSION_ID,
+    getPanelModule() {
+      return [
+        {
+          name: "workspace",
+          iconName: "tab-studies",
+          iconLabel: "Workspace",
+          label: "RadSysX Workspace",
+          component: () => React.createElement("radsysx-workspace-panel"),
+        },
+      ];
+    },
+  };
+
+  async function requestJson(path, init) {
+    const response = await fetch(path, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+    });
+
+    if (!response.ok) {
+      const payload = await response.text();
+      throw new Error(payload || `Request failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  function renderItems(items, empty) {
+    if (!items || items.length === 0) {
+      return `<div class="radsysx-empty">${escapeHtml(empty)}</div>`;
+    }
+    return items
+      .map(
+        (item) => `
+          <div class="radsysx-item">
+            <div class="radsysx-item-title">${escapeHtml(item.title)}</div>
+            <div class="radsysx-item-body">${escapeHtml(item.body)}</div>
+          </div>
+        `,
+      )
+      .join("");
+  }
+
+  function formatDate(value) {
+    if (!value) {
+      return "";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+})();

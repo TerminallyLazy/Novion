@@ -48,7 +48,7 @@ class ClinicalSessionManager:
         self._settings = settings
         self._serializer = URLSafeSerializer(
             settings.session_secret,
-            salt="novion.clinical.session",
+            salt="radsysx.clinical.session",
         )
 
     @property

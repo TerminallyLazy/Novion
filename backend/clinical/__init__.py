@@ -1,1 +1,1 @@
-"""Clinical platform foundation for Novion."""
+"""Clinical platform foundation for RadSysX."""

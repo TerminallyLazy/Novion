@@ -38,7 +38,7 @@ from .contracts import (
     to_iso_z,
     utc_now,
 )
-from .dicomweb import DICOMwebAdapter
+from .dicomweb import DICOMwebAdapter, UploadedDicomPart
 from .repositories import ClinicalRepository
 
 
@@ -275,7 +275,7 @@ class ClinicalPlatformService:
     async def store_uploaded_derived_results(
         self,
         request: DerivedResultStowRequest,
-        files: list[tuple[str, bytes]],
+        files: list[UploadedDicomPart],
         actor: SessionClaims,
         source_ip: str,
     ) -> DerivedResultResponse:
@@ -296,7 +296,7 @@ class ClinicalPlatformService:
                 "metadata": {
                     **request.metadata,
                     "stowFileIndex": index,
-                    "stowFileName": files[index - 1][0],
+                    "stowFileName": files[index - 1].filename,
                 },
             }
             derived = DerivedDicomObject.model_validate(payload)

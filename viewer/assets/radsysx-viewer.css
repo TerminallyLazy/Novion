@@ -1,0 +1,201 @@
+:root {
+  --radsysx-panel-border: rgba(148, 163, 184, 0.18);
+  --radsysx-panel-bg: rgba(9, 14, 24, 0.92);
+  --radsysx-panel-muted: #9ca3af;
+  --radsysx-panel-text: #f8fafc;
+  --radsysx-panel-accent: #67e8f9;
+  --radsysx-panel-accent-strong: #22d3ee;
+}
+
+#radsysx-loader {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2147483647;
+  background:
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.82), rgba(2, 6, 23, 0.94));
+}
+
+.radsysx-loader-card {
+  width: min(34rem, calc(100vw - 2rem));
+  border-radius: 1.5rem;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  background: rgba(9, 14, 24, 0.94);
+  padding: 1.5rem;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.radsysx-loader-kicker,
+.radsysx-panel-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(103, 232, 249, 0.82);
+}
+
+.radsysx-loader-title,
+.radsysx-panel-title {
+  margin-top: 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--radsysx-panel-text);
+}
+
+.radsysx-loader-body,
+.radsysx-panel-subtitle {
+  margin-top: 0.5rem;
+  font-size: 0.92rem;
+  color: var(--radsysx-panel-muted);
+}
+
+.radsysx-panel-root {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+  background: transparent;
+}
+
+.radsysx-panel-shell {
+  display: grid;
+  gap: 1rem;
+  min-height: 100%;
+  padding: 1rem;
+  background: transparent;
+}
+
+.radsysx-panel-header,
+.radsysx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.radsysx-row-stack {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.radsysx-section {
+  border: 1px solid var(--radsysx-panel-border);
+  border-radius: 1rem;
+  background: var(--radsysx-panel-bg);
+  padding: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.radsysx-section-title {
+  margin-bottom: 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(103, 232, 249, 0.78);
+}
+
+.radsysx-field {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+  color: var(--radsysx-panel-text);
+}
+
+.radsysx-field textarea {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.92);
+  color: var(--radsysx-panel-text);
+  padding: 0.8rem 0.9rem;
+  resize: vertical;
+}
+
+.radsysx-primary-button,
+.radsysx-ghost-button {
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 0.62rem 0.95rem;
+  cursor: pointer;
+}
+
+.radsysx-primary-button {
+  background: var(--radsysx-panel-accent);
+  color: #082f49;
+}
+
+.radsysx-ghost-button {
+  background: rgba(15, 23, 42, 0.86);
+  color: var(--radsysx-panel-text);
+}
+
+.radsysx-caption {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--radsysx-panel-muted);
+}
+
+.radsysx-status {
+  border-radius: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.86);
+  color: var(--radsysx-panel-text);
+  padding: 0.8rem 0.9rem;
+}
+
+.radsysx-status-success {
+  border-color: rgba(74, 222, 128, 0.26);
+  background: rgba(22, 101, 52, 0.16);
+}
+
+.radsysx-status-error {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.radsysx-upload-block {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.radsysx-upload-label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--radsysx-panel-text);
+}
+
+.radsysx-upload-label input {
+  color: var(--radsysx-panel-muted);
+}
+
+.radsysx-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.radsysx-item,
+.radsysx-empty {
+  border-radius: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.75rem 0.85rem;
+}
+
+.radsysx-item-title {
+  color: var(--radsysx-panel-text);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.radsysx-item-body,
+.radsysx-empty {
+  color: var(--radsysx-panel-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}

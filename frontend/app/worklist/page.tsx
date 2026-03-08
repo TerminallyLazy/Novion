@@ -92,7 +92,7 @@ export default function WorklistPage() {
             <div>
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-cyan-300/80">
                 <ShieldCheck className="h-4 w-4" />
-                Clinical workspace
+                RadSysX Clinical Workspace
               </div>
               <h1 className="mt-3 text-3xl font-semibold text-white">{headline}</h1>
               <p className="mt-3 max-w-3xl text-sm text-slate-300">
