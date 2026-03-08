@@ -1,0 +1,19 @@
+{
+  "name": "@novion/viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build-ohif-dist.mjs",
+    "dev": "npm run build && http-server ./dist -p 3001 -c-1",
+    "type-check": "tsc --noEmit -p ./tsconfig.json"
+  },
+  "dependencies": {
+    "@novion/clinical-web": "file:../packages/clinical-web",
+    "@ohif/app": "3.11.1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "typescript": "^5.3.2"
+  }
+}

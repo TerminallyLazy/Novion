@@ -1,0 +1,18 @@
+{
+  "name": "novion",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "viewer",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace viewer && npm run build --workspace frontend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "dev:viewer": "npm run dev --workspace viewer",
+    "type-check": "npm run type-check --workspace frontend && npm run type-check --workspace viewer"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.0"
+  }
+}

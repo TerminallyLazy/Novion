@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """FastAPI entrypoint for Novion."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,29 +64,42 @@ except Exception:
             return _FallbackChatInterface()
 
 try:
+    from backend.clinical.auth import ClinicalSessionManager
     from backend.clinical.config import get_settings
     from backend.clinical.contracts import (
         AIJobCreateRequest,
+        ClinicalPlatformConfig,
+        DerivedResultStowRequest,
         DerivedResultRequest,
         ImagingLaunchRequest,
+        LocalLoginRequest,
         ReportDraftRequest,
+        SessionClaims,
+        SessionResponse,
     )
     from backend.clinical.dicomweb import OrthancDICOMwebAdapter
     from backend.clinical.repositories import ClinicalRepository
     from backend.clinical.services import ClinicalPlatformService
 except ModuleNotFoundError:
+    from clinical.auth import ClinicalSessionManager
     from clinical.config import get_settings
     from clinical.contracts import (
         AIJobCreateRequest,
+        ClinicalPlatformConfig,
+        DerivedResultStowRequest,
         DerivedResultRequest,
         ImagingLaunchRequest,
+        LocalLoginRequest,
         ReportDraftRequest,
+        SessionClaims,
+        SessionResponse,
     )
     from clinical.dicomweb import OrthancDICOMwebAdapter
     from clinical.repositories import ClinicalRepository
     from clinical.services import ClinicalPlatformService
 
 settings = get_settings()
+session_manager = ClinicalSessionManager(settings)
 
 app = FastAPI(title="Novion API")
 
@@ -293,44 +306,104 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _set_session_cookie(response: Response, session: SessionClaims) -> None:
+    response.set_cookie(
+        key=session_manager.cookie_name,
+        value=session_manager.dumps(session),
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=settings.session_ttl_seconds,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=session_manager.cookie_name,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        path="/",
+    )
+
+
+def _optional_session(request: Request) -> SessionClaims | None:
+    return session_manager.loads(request.cookies.get(session_manager.cookie_name))
+
+
+def _require_session(request: Request) -> SessionClaims:
+    session = _optional_session(request)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Clinical session required.")
+    return session
+
+
+@app.post("/api/auth/local-login")
+async def clinical_local_login(payload: LocalLoginRequest, response: Response):
+    """Issue a local clinical session for a seeded persona."""
+    session = session_manager.issue_for_username(payload.username)
+    _set_session_cookie(response, session)
+    return {"session": session.model_dump(by_alias=True)}
+
+
+@app.get("/api/auth/session")
+async def clinical_auth_session(http_request: Request) -> SessionResponse:
+    """Return the active clinical session if one exists."""
+    session = _optional_session(http_request)
+    return SessionResponse(authenticated=session is not None, session=session)
+
+
+@app.post("/api/auth/logout")
+async def clinical_auth_logout(response: Response) -> SessionResponse:
+    """Clear the current clinical session cookie."""
+    _clear_session_cookie(response)
+    return SessionResponse(authenticated=False, session=None)
+
+
 @app.get("/api/platform/config")
-async def clinical_platform_config():
+async def clinical_platform_config() -> ClinicalPlatformConfig:
     """Expose the active clinical platform posture to the frontend shell."""
-    return {
-        "mode": settings.app_mode.value,
-        "experimentalRoutesEnabled": settings.experimental_routes_enabled,
-        "viewerBaseUrl": settings.viewer_base_url,
-        "aiDefaultWorkflowMode": settings.ai_default_workflow_mode.value,
-        "aiAllowActive": settings.ai_allow_active,
-    }
+    return ClinicalPlatformConfig(
+        mode=settings.app_mode,
+        experimental_routes_enabled=settings.experimental_routes_enabled,
+        viewer_base_url=settings.viewer_base_url,
+        viewer_kind=settings.viewer_kind,
+        viewer_base_path=settings.viewer_base_path,
+        auth_mode=settings.auth_mode,
+        ai_default_workflow_mode=settings.ai_default_workflow_mode,
+        ai_allow_active=settings.ai_allow_active,
+    )
 
 
 @app.post("/api/imaging/launch")
 async def launch_imaging(request: ImagingLaunchRequest, http_request: Request):
     """Create a signed imaging launch context for the viewer surface."""
-    return await clinical_service.launch_imaging(request, source_ip=_client_ip(http_request))
+    actor = _require_session(http_request)
+    return await clinical_service.launch_imaging(
+        request,
+        actor=actor,
+        source_ip=_client_ip(http_request),
+    )
 
 
 @app.get("/api/imaging/launch/resolve")
 async def resolve_imaging_launch(launch: str, http_request: Request):
     """Resolve an opaque launch token into the signed imaging context."""
+    actor = _require_session(http_request)
     return await clinical_service.resolve_imaging_launch(
         launch,
+        actor=actor,
         source_ip=_client_ip(http_request),
     )
 
 
 @app.get("/api/worklist")
-async def get_worklist(
-    http_request: Request,
-    role: str = "radiologist",
-    user_id: str = "demo-radiologist",
-    trace_id: str | None = None,
-):
+async def get_worklist(http_request: Request, trace_id: str | None = None):
     """Return the current radiology worklist."""
+    actor = _require_session(http_request)
     return clinical_service.get_worklist(
-        user_id=user_id,
-        role=role,
+        actor=actor,
         source_ip=_client_ip(http_request),
         trace_id=trace_id,
     )
@@ -340,15 +413,13 @@ async def get_worklist(
 async def get_study_workspace(
     study_uid: str,
     http_request: Request,
-    role: str = "radiologist",
-    user_id: str = "demo-radiologist",
     trace_id: str | None = None,
 ):
     """Return the workspace aggregate for a study."""
+    actor = _require_session(http_request)
     return clinical_service.get_study_workspace(
         study_uid=study_uid,
-        user_id=user_id,
-        role=role,
+        actor=actor,
         source_ip=_client_ip(http_request),
         trace_id=trace_id,
     )
@@ -357,27 +428,79 @@ async def get_study_workspace(
 @app.post("/api/reports/draft")
 async def save_report(request: ReportDraftRequest, http_request: Request):
     """Create or update a report draft with provenance references."""
-    return clinical_service.save_report(request, source_ip=_client_ip(http_request))
+    actor = _require_session(http_request)
+    return clinical_service.save_report(
+        request,
+        actor=actor,
+        source_ip=_client_ip(http_request),
+    )
 
 
 @app.post("/api/ai/jobs")
 async def submit_ai_job(request: AIJobCreateRequest, http_request: Request):
     """Queue an AI job under governance rules."""
-    return clinical_service.submit_ai_job(request, source_ip=_client_ip(http_request))
+    actor = _require_session(http_request)
+    return clinical_service.submit_ai_job(
+        request,
+        actor=actor,
+        source_ip=_client_ip(http_request),
+    )
 
 
 @app.post("/api/derived-results")
 async def store_derived_results(request: DerivedResultRequest, http_request: Request):
-    """Stage derived DICOM result references through the imaging gateway contract."""
+    """Stage non-binary derived DICOM result references through the imaging gateway contract."""
+    actor = _require_session(http_request)
     return await clinical_service.store_derived_results(
         request,
+        actor=actor,
+        source_ip=_client_ip(http_request),
+    )
+
+
+@app.post("/api/derived-results/stow")
+async def store_derived_results_stow(
+    http_request: Request,
+    study_instance_uid: str = Form(alias="studyInstanceUID"),
+    object_type: str = Form(alias="objectType"),
+    storage_class: str = Form(alias="storageClass"),
+    series_instance_uid: str | None = Form(default=None, alias="seriesInstanceUID"),
+    sop_instance_uid: str | None = Form(default=None, alias="sopInstanceUID"),
+    content_type: str = Form(default="application/dicom", alias="contentType"),
+    metadata: str = Form(default="{}"),
+    trace_id: str | None = Form(default=None, alias="traceId"),
+    files: list[UploadFile] = File(...),
+):
+    """Store PS3.10 DICOM instances through the backend STOW gateway."""
+    actor = _require_session(http_request)
+    try:
+        metadata_json = json.loads(metadata) if metadata else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid metadata JSON: {exc.msg}") from exc
+
+    payload = DerivedResultStowRequest(
+        study_instance_uid=study_instance_uid,
+        object_type=object_type,
+        storage_class=storage_class,
+        series_instance_uid=series_instance_uid,
+        sop_instance_uid=sop_instance_uid,
+        content_type=content_type,
+        metadata=metadata_json,
+        trace_id=trace_id,
+    )
+    file_payloads = [(upload.filename or "derived.dcm", await upload.read()) for upload in files]
+    return await clinical_service.store_uploaded_derived_results(
+        payload,
+        files=file_payloads,
+        actor=actor,
         source_ip=_client_ip(http_request),
     )
 
 
 @app.get("/api/audit/studies/{study_uid}")
-async def get_study_audit(study_uid: str):
+async def get_study_audit(study_uid: str, http_request: Request):
     """Return audit events tied to a study instance UID."""
+    _require_session(http_request)
     return clinical_service.list_audit_events(study_uid)
 
 

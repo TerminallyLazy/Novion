@@ -5,6 +5,7 @@ dicom-test-files/*
 test-data/*
 frontend/node_modules/*
 frontend/dist/*
+viewer/dist/*
 frontend/lib/api/.venv/*
 backend/.venv/*
 .env.local
@@ -15,6 +16,7 @@ backend/.venv/*
 */node_modules/*
 frontend/package-lock.json
 frontend/dist
+viewer/dist
 
 *.code-workspace
 .cursorignore

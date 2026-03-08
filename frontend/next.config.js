@@ -8,6 +8,7 @@ const nextConfig = {
 
   // Let Next transpile ESM dependencies if needed (Cornerstone 3D is ESM)
   transpilePackages: [
+    '@novion/clinical-web',
     '@cornerstonejs/core',
     '@cornerstonejs/tools',
     '@cornerstonejs/dicom-image-loader',
