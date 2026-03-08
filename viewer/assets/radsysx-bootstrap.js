@@ -6,7 +6,7 @@
 (async function radsysxBootstrap() {
   const LAUNCH_STORAGE_KEY = "radsysx.clinical.launchToken";
   const REQUEST_TIMEOUT_MS = 10000;
-  const loader = ensureLoader();
+  const loader = await ensureLoader();
   const params = new URLSearchParams(window.location.search);
   const launchFromUrl = params.get("launch");
   const initialViewerBasePath = normalizeViewerBasePath(window.location.pathname) ?? "/";
@@ -181,10 +181,21 @@
     return normalized || "/";
   }
 
-  function ensureLoader() {
+  async function ensureLoader() {
     const existing = document.getElementById("radsysx-loader");
     if (existing) {
       return existing;
+    }
+
+    if (!document.body) {
+      await new Promise((resolve) => {
+        if (document.body) {
+          resolve(undefined);
+          return;
+        }
+
+        document.addEventListener("DOMContentLoaded", () => resolve(undefined), { once: true });
+      });
     }
 
     const element = document.createElement("div");
@@ -196,7 +207,7 @@
         <div class="radsysx-loader-body" data-role="body">Preparing the OHIF runtime...</div>
       </div>
     `;
-    document.body.appendChild(element);
+    (document.body ?? document.documentElement).appendChild(element);
     return element;
   }
 

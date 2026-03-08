@@ -63,7 +63,9 @@ services:
     environment:
       RADSYSX_ORTHANC_USERNAME: "${RADSYSX_ORTHANC_USERNAME:?Set RADSYSX_ORTHANC_USERNAME}"
       RADSYSX_ORTHANC_PASSWORD: "${RADSYSX_ORTHANC_PASSWORD:?Set RADSYSX_ORTHANC_PASSWORD}"
-    command: sh /usr/local/bin/render-orthanc-config.sh
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/render-orthanc-config.sh
     volumes:
       - ./deploy/clinical-stack/orthanc.json:/etc/orthanc/orthanc.json:ro
       - ./deploy/clinical-stack/render-orthanc-config.sh:/usr/local/bin/render-orthanc-config.sh:ro
