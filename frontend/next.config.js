@@ -1,10 +1,17 @@
 /* eslint-disable */
 /** @type {import('next').NextConfig} */
+const path = require('path');
 const { ProvidePlugin } = require('webpack');
+
+const frontendRoot = __dirname;
+const workspaceRoot = path.resolve(__dirname, '..');
 
 const nextConfig = {
   // Use standalone output for better package handling
   output: 'standalone',
+  // The frontend imports sibling workspace packages (for example
+  // `packages/clinical-web`), so tracing must use the monorepo root.
+  outputFileTracingRoot: workspaceRoot,
 
   // Let Next transpile ESM dependencies if needed (Cornerstone 3D is ESM)
   transpilePackages: [
@@ -17,15 +24,16 @@ const nextConfig = {
 
   // Keep other experimental opts minimal to avoid deprecation warnings
   experimental: {
-    // Intentionally left blank for future-proofing; remove deprecated keys.
+    // Allow the frontend app to import sibling workspace packages.
+    externalDir: true,
   },
 
   // Turbopack config (Next.js 16 default bundler)
   turbopack: {
-    root: __dirname,
+    root: workspaceRoot,
     resolveAlias: {
       // Stub out Node.js built-ins that WASM codecs reference but don't need in-browser
-      fs: { browser: './empty-module.js' },
+      fs: { browser: path.join(frontendRoot, 'empty-module.js') },
       path: 'path-browserify',
       crypto: 'crypto-browserify',
       stream: 'stream-browserify',

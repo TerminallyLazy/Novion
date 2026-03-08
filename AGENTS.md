@@ -21,7 +21,7 @@ Rules:
 
 - Do not assume WSL, Windows path translation, Docker Desktop integration, `fnm`, or any Windows-only shell behavior.
 - Do not rely on machine-specific temporary dependency paths, ad hoc `PYTHONPATH` overrides, or globally preinstalled packages that are not documented.
-- Prefer a repo-local Python virtual environment in `.venv` and the workspace `package.json` / lockfile state for Node dependencies.
+- Prefer a repo-local Python virtual environment in `.venv` and the workspace `package.json` plus the root `package-lock.json` for Node dependencies.
 - Treat Docker Engine + Compose on Linux as the reference container runtime, not Docker Desktop-specific behavior.
 - On a fresh Linux host, first do a quick repo/context recon, then stop and wait for the user's report about what happened during the first Linux app test pass before making deeper code changes.
 
@@ -290,6 +290,8 @@ If Docker Engine and Compose are available on the Linux host, also validate the 
 - `npm run type-check --workspace frontend`
 - `npm run type-check --workspace viewer`
 - `npm run build --workspace viewer`
+
+Use the workspace script for the frontend dev server; it is the supported local start path for the monorepo shell.
 
 ### Local Clinical Stack
 

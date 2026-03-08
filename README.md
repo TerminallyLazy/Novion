@@ -223,6 +223,7 @@ npm install --legacy-peer-deps
 ```
 
 Backend dependencies should be installed into `.venv`, not into ad hoc machine-local paths.
+Node dependencies should be installed from the repo root so the workspace-managed root `package-lock.json` remains authoritative.
 `backend/requirements-clinical.txt` is the governed clinical bootstrap set. `backend/requirements.txt` remains the broader research/agent dependency set and may carry tighter interpreter constraints than the clinical slice.
 
 ### Install the full backend/runtime dependency set
@@ -255,6 +256,8 @@ In a second terminal:
 ```bash
 npm run dev --workspace frontend
 ```
+
+Use the workspace script from the repo root rather than invoking `next dev` directly inside `frontend/`.
 
 ### Focused backend checks
 

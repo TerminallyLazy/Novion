@@ -15,7 +15,7 @@ The clinical path is the migration target. Do not plan against research-only sea
 
 - Preferred host: native Linux
 - Do not assume WSL, Windows paths, Docker Desktop behavior, or machine-local temp dependency hacks
-- Prefer `.venv` for Python deps and workspace-managed Node deps
+- Prefer `.venv` for Python deps and workspace-managed Node deps rooted at the repo `package-lock.json`
 - After initial recon on the Linux host, wait for the user's first Linux runtime test report before widening the change scope
 
 ## Current Clinical Runtime

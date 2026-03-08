@@ -6,7 +6,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
+    "dev:turbopack": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -36,6 +36,8 @@ npm run type-check --workspace viewer
 npm run build --workspace viewer
 ```
 
+Install Node dependencies from the repo root so the workspace-managed root `package-lock.json` is the only active lockfile.
+
 After initial recon on the Linux host, wait for the user's first app test report before widening the code-change scope.
 
 Local compose stack:
