@@ -147,7 +147,7 @@ pandas==2.2.3
 pdfminer.six==20231228
 pgvector==0.2.5
 phonemizer-fork==3.3.1
-pillow==11.1.0
+pillow==12.1.1
 platformdirs @ file:///work/perseverance-python-buildout/croot/platformdirs_1701732573265/work
 pluggy @ file:///croot/pluggy_1733169602837/work
 pooch==1.8.2
