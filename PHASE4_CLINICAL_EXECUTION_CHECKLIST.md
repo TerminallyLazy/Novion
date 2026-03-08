@@ -1,19 +1,19 @@
-# Phase 4 Clinical Execution Checklist
+# Current Clinical Execution Checklist
 
 Branch context:
 
-- local working branch: `new-dev-1-31-26`
+- local working branch: use the current active branch
 - related architecture guidance: `AGENTS.md`
 - public product/runtime name: `RadSysX`
 
 Purpose:
 
-- Replace the completed PR #50 polish checklist with the current execution list for finishing the clinical OHIF migration.
-- Track the remaining work after the hardening pass, the RadSysX rename, and the removal of viewer fallbacks.
+- Track the remaining work after the clinical OHIF cutover, the RadSysX rename, and the PR #51 hardening/polish fixes.
+- Keep the next tranche grounded in the current shipped baseline rather than earlier migration-phase assumptions.
 
 ## Current Baseline
 
-These items are already the starting point for Phase 4:
+These items are already part of the current post-Phase-4-polish baseline:
 
 - [x] RadSysX is the active runtime name across code, packages, env vars, and active docs.
 - [x] OHIF owns the clinical `/viewer` route.
@@ -33,6 +33,11 @@ These items are already the starting point for Phase 4:
 - Guidance docs describe the shipped architecture accurately enough that a new contributor would not plan against stale assumptions.
 
 ## Execution Checklist
+
+- [ ] Start the native Linux validation tranche correctly.
+  - Use a native Linux host as the reference posture.
+  - Bootstrap Python deps with `.venv` and Node deps with workspace `npm install`.
+  - Do a short context recon, then wait for the user's first Linux runtime test report before broad code changes.
 
 - [ ] Finish documentation alignment across the maintained surface.
   - Update any remaining deploy/runtime docs to reflect `RADSYSX_*` env vars, the no-fallback OHIF viewer, and the current one-origin compose stack.
@@ -69,12 +74,13 @@ These items are already the starting point for Phase 4:
 
 ## Suggested Execution Order
 
-1. Documentation alignment and leftover rename cleanup
-2. Native OHIF extension/mode deepening
-3. SR export + reload wiring
-4. SEG export + reload wiring
-5. End-to-end compose validation
-6. Institutional identity/context preparation
+1. Native Linux validation intake and first observed runtime report
+2. Documentation alignment and leftover rename cleanup
+3. Native OHIF extension/mode deepening
+4. SR export + reload wiring
+5. SEG export + reload wiring
+6. End-to-end compose validation
+7. Institutional identity/context preparation
 
 ## Suggested Verification
 
@@ -83,7 +89,7 @@ These items are already the starting point for Phase 4:
 - `npm run type-check --workspace frontend`
 - `npm run type-check --workspace viewer`
 - `npm run build --workspace viewer`
-- If Docker Desktop with WSL integration is available:
+- If Docker Engine + Compose are available on the Linux host:
   - `RADSYSX_ORTHANC_USERNAME=<user> RADSYSX_ORTHANC_PASSWORD=<pass> docker compose up --build`
 
 ## Guardrails

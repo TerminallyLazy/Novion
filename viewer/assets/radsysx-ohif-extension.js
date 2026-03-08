@@ -11,6 +11,7 @@
   }
 
   const EXTENSION_ID = "@radsysx/extension-clinical";
+  const DEFAULT_DICOMWEB_NAMESPACE = "@ohif/extension-default.dataSourcesModule.dicomweb";
   const WORKSPACE_PANEL_ID = `${EXTENSION_ID}.panelModule.workspace`;
 
   class RadSysXWorkspacePanel extends HTMLElement {
@@ -370,6 +371,62 @@
 
   window.__RADSYSX_OHIF_EXTENSION__ = {
     id: EXTENSION_ID,
+    getDataSourcesModule() {
+      return [
+        {
+          name: "dicomweb",
+          type: "webApi",
+          createDataSource(configuration, servicesManager, extensionManager) {
+            const defaultModule = extensionManager?.getModuleEntry?.(DEFAULT_DICOMWEB_NAMESPACE);
+
+            if (!defaultModule?.createDataSource) {
+              throw new Error("The default OHIF dicomweb data source is unavailable.");
+            }
+
+            const runtimeConfiguration = {
+              ...(configuration ?? {}),
+            };
+            const dataSource = defaultModule.createDataSource(
+              runtimeConfiguration,
+              servicesManager,
+              extensionManager,
+            );
+            const originalInitialize = dataSource.initialize?.bind(dataSource);
+            const originalGetStudyInstanceUIDs = dataSource.getStudyInstanceUIDs?.bind(dataSource);
+            const originalRetrieveSeriesMetadata =
+              dataSource.retrieve?.series?.metadata?.bind(dataSource.retrieve.series);
+
+            if (originalInitialize) {
+              dataSource.initialize = async function initialize(initArgs) {
+                await window.__RADSYSX_BOOTSTRAP_PROMISE__;
+                applyViewerRuntimeToDicomwebConfiguration(runtimeConfiguration);
+                return originalInitialize(initArgs);
+              };
+            }
+
+            if (originalGetStudyInstanceUIDs) {
+              dataSource.getStudyInstanceUIDs = function getStudyInstanceUIDs(initArgs) {
+                const studyInstanceUIDs = originalGetStudyInstanceUIDs(initArgs);
+                if (studyInstanceUIDs?.filter(Boolean).length) {
+                  return studyInstanceUIDs;
+                }
+
+                const launchStudyUid = getLaunchContext()?.studyInstanceUID;
+                return launchStudyUid ? [launchStudyUid] : studyInstanceUIDs;
+              };
+            }
+
+            if (dataSource.retrieve?.series && originalRetrieveSeriesMetadata) {
+              dataSource.retrieve.series.metadata = function metadata(args) {
+                return originalRetrieveSeriesMetadata(injectLaunchSeriesFilters(args));
+              };
+            }
+
+            return dataSource;
+          },
+        },
+      ];
+    },
     getPanelModule() {
       return [
         {
@@ -435,5 +492,59 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function injectLaunchSeriesFilters(args) {
+    const launchContext = getLaunchContext();
+    const seriesInstanceUIDs = launchContext?.seriesInstanceUIDs ?? [];
+    if (seriesInstanceUIDs.length === 0) {
+      return args;
+    }
+
+    const filters = {
+      ...(args?.filters ?? {}),
+    };
+    const hasSeriesFilter =
+      filters.SeriesInstanceUID ||
+      filters.SeriesInstanceUIDs ||
+      filters.seriesInstanceUID ||
+      filters.seriesInstanceUIDs;
+
+    if (hasSeriesFilter) {
+      return args;
+    }
+
+    return {
+      ...(args ?? {}),
+      filters: {
+        ...filters,
+        seriesInstanceUID: seriesInstanceUIDs,
+      },
+    };
+  }
+
+  function applyViewerRuntimeToDicomwebConfiguration(configuration) {
+    const viewerRuntime = getViewerRuntime();
+    if (!viewerRuntime || !configuration) {
+      return configuration;
+    }
+
+    configuration.qidoRoot = viewerRuntime.qidoRoot || configuration.qidoRoot;
+    configuration.wadoRoot = viewerRuntime.wadoRoot || configuration.wadoRoot;
+    configuration.wadoUriRoot =
+      viewerRuntime.wadoUriRoot ||
+      viewerRuntime.wadoRoot ||
+      configuration.wadoUriRoot ||
+      configuration.wadoRoot;
+    configuration.stowRoot = viewerRuntime.stowRoot || configuration.stowRoot;
+    return configuration;
+  }
+
+  function getViewerRuntime() {
+    return window.__RADSYSX_VIEWER_RUNTIME__ ?? window.__RADSYSX_LAUNCH__?.viewerRuntime ?? null;
+  }
+
+  function getLaunchContext() {
+    return window.__RADSYSX_LAUNCH__?.context ?? null;
   }
 })();

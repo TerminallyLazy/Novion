@@ -11,6 +11,7 @@ This repository’s authoritative implementation guidance is [AGENTS.md](AGENTS.
 - Shared browser clinical package: `packages/clinical-web/*`
 - Clinical shell: `frontend/app/login/page.tsx`, `frontend/app/worklist/page.tsx`
 - Root `frontend/app/page.tsx`: landing/surface selector, not the clinical viewer
+- Preferred host: native Linux, not WSL-specific tooling assumptions
 
 ## Two Surfaces
 
@@ -22,12 +23,18 @@ Do not treat them as equivalent.
 ## Commands
 
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r backend/requirements.txt
+npm install --legacy-peer-deps
 python3 -m compileall backend/clinical backend/server.py backend/radsysx.py
 python3 -m pytest backend/tests/test_clinical_platform.py
 npm run type-check --workspace frontend
 npm run type-check --workspace viewer
 npm run build --workspace viewer
 ```
+
+After initial recon on the Linux host, wait for the user's first app test report before widening the code-change scope.
 
 Local compose stack:
 

@@ -11,6 +11,13 @@ RadSysX has two product surfaces:
 
 The clinical path is the migration target. Do not plan against research-only seams when making clinical changes.
 
+## Environment Posture
+
+- Preferred host: native Linux
+- Do not assume WSL, Windows paths, Docker Desktop behavior, or machine-local temp dependency hacks
+- Prefer `.venv` for Python deps and workspace-managed Node deps
+- After initial recon on the Linux host, wait for the user's first Linux runtime test report before widening the change scope
+
 ## Current Clinical Runtime
 
 - Backend authority: `backend/server.py` and `backend/clinical/*`

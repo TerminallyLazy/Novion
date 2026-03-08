@@ -49,13 +49,10 @@ function copyWorkspaceAsset(relativeParts, outputName) {
 function writeAppConfig() {
   const config = `/** @type {AppTypes.Config} */
 (function radsysxAppConfig() {
-  const resolved = window.__RADSYSX_LAUNCH__;
-  const runtime = resolved?.viewerRuntime ?? {};
   window.config = {
     name: "config/radsysx-clinical.js",
-    routerBasename: runtime.viewerBasePath ?? "/viewer",
+    routerBasename: window.__RADSYSX_VIEWER_BASE_PATH__ ?? null,
     extensions: [
-      window.__RADSYSX_OHIF_EXTENSION__,
       "@ohif/extension-default",
       "@ohif/extension-cornerstone",
       "@ohif/extension-measurement-tracking",
@@ -63,6 +60,7 @@ function writeAppConfig() {
       "@ohif/extension-cornerstone-dicom-seg",
       "@ohif/extension-dicom-pdf",
       "@ohif/extension-dicom-video",
+      window.__RADSYSX_OHIF_EXTENSION__,
     ],
     modes: [
       window.__RADSYSX_OHIF_MODE__,
@@ -76,14 +74,14 @@ function writeAppConfig() {
     defaultDataSourceName: "dicomweb",
     dataSources: [
       {
-        namespace: "@ohif/extension-default.dataSourcesModule.dicomweb",
+        namespace: "@radsysx/extension-clinical.dataSourcesModule.dicomweb",
         sourceName: "dicomweb",
         configuration: {
           friendlyName: "RadSysX Clinical DICOMweb",
           name: "radsysxOrthanc",
-          qidoRoot: runtime.qidoRoot ?? "/dicom-web",
-          wadoRoot: runtime.wadoRoot ?? "/dicom-web",
-          wadoUriRoot: runtime.wadoUriRoot ?? "/dicom-web",
+          qidoRoot: null,
+          wadoRoot: null,
+          wadoUriRoot: null,
           qidoSupportsIncludeField: true,
           supportsReject: false,
           supportsStow: false,
@@ -108,22 +106,35 @@ function writeAppConfig() {
 function patchIndexHtml() {
   const indexPath = path.join(distRoot, "index.html");
   let html = fs.readFileSync(indexPath, "utf8");
+  const publicUrlBootstrap = [
+    "window.__RADSYSX_VIEWER_BASE_PATH__ = (function resolveViewerBasePath() {",
+    "  const pathname = window.location.pathname || '/';",
+    "  const normalized = pathname.replace(/\\/+$/, '');",
+    "  return normalized || '/';",
+    "})();",
+    "window.__RADSYSX_PUBLIC_URL__ =",
+    "  window.__RADSYSX_VIEWER_BASE_PATH__ === '/' ? '/' : `${window.__RADSYSX_VIEWER_BASE_PATH__}/`;",
+    "document.write('<base href=\"' + window.__RADSYSX_PUBLIC_URL__.replace(/\"/g, '&quot;') + '\">');",
+    "window.PUBLIC_URL = window.__RADSYSX_PUBLIC_URL__;",
+  ].join(" ");
 
-  html = html.replace("window.PUBLIC_URL = '/';", "window.PUBLIC_URL = '/viewer/';");
-  html = html.replace(/(src|href)=\"\//g, '$1="/viewer/');
+  html = html.replace("window.PUBLIC_URL = '/';", publicUrlBootstrap);
+  html = html.replace("window.PUBLIC_URL = '/';", "window.PUBLIC_URL = window.__RADSYSX_PUBLIC_URL__;");
+  html = html.replace(/(src|href|content)=\"\/assets\//g, '$1="assets/');
+  html = html.replace(/(src|href)=\"\//g, '$1="');
   html = html.replace(
-    '<script rel="preload" as="script" src="/viewer/app-config.js"></script>',
+    '<script rel="preload" as="script" src="app-config.js"></script>',
     [
-      '<script src="/viewer/react.production.min.js"></script>',
-      '<script src="/viewer/radsysx-bootstrap.js"></script>',
-      '<script src="/viewer/radsysx-ohif-extension.js"></script>',
-      '<script src="/viewer/radsysx-ohif-mode.js"></script>',
-      '<script rel="preload" as="script" src="/viewer/app-config.js"></script>',
+      '<script src="react.production.min.js"></script>',
+      '<script src="radsysx-bootstrap.js"></script>',
+      '<script src="radsysx-ohif-extension.js"></script>',
+      '<script src="radsysx-ohif-mode.js"></script>',
+      '<script rel="preload" as="script" src="app-config.js"></script>',
     ].join(""),
   );
   html = html.replace(
     "</head>",
-    '<link href="/viewer/radsysx-viewer.css" rel="stylesheet"></head>',
+    '<link href="radsysx-viewer.css" rel="stylesheet"></head>',
   );
 
   fs.writeFileSync(indexPath, html, "utf8");
