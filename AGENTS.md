@@ -13,6 +13,43 @@ RadSysX currently has two parallel product surfaces:
 
 Do not treat those surfaces as equivalent.
 
+## Host Environment Posture
+
+The primary development and validation target is now a native Linux host.
+
+Rules:
+
+- Do not assume WSL, Windows path translation, Docker Desktop integration, `fnm`, or any Windows-only shell behavior.
+- Do not rely on machine-specific temporary dependency paths, ad hoc `PYTHONPATH` overrides, or globally preinstalled packages that are not documented.
+- Prefer a repo-local Python virtual environment in `.venv` and the workspace `package.json` / lockfile state for Node dependencies.
+- Treat Docker Engine + Compose on Linux as the reference container runtime, not Docker Desktop-specific behavior.
+- On a fresh Linux host, first do a quick repo/context recon, then stop and wait for the user's report about what happened during the first Linux app test pass before making deeper code changes.
+
+For future Linux bring-up, prefer this bootstrap sequence:
+
+- `python3 -m venv .venv`
+- `. .venv/bin/activate`
+- `python3 -m pip install --upgrade pip`
+- `python3 -m pip install -r backend/requirements.txt`
+- `npm install --legacy-peer-deps`
+
+If the host is missing a required system dependency, surface that explicitly instead of patching around it with host-local hacks.
+
+## Project Operating Rules
+
+These rules are intended to keep RadSysX coherent as the clinical platform hardens and the repo continues to carry both research and clinical surfaces.
+
+1. Update docs in the same tranche as code when behavior, architecture, env vars, commands, or operational expectations change.
+2. Treat `AGENTS.md` as the authoritative guide and keep `README.md`, `CLAUDE.md`, `WARP.md`, and active checklists aligned instead of letting them drift.
+3. Keep the research and clinical surfaces explicitly separated; do not solve a clinical gap by routing through a research-only shortcut.
+4. Prefer backend-authoritative contracts over browser-local state or inferred client behavior whenever clinical workflow, actor identity, reporting, AI, DICOM, or audit data is involved.
+5. Keep the viewer bootstrap minimal; if behavior can live in an OHIF extension, mode, service, or backend contract, move it there.
+6. Never normalize insecure local habits into maintained guidance: no committed live credentials, no PHI-bearing URLs, no casual identifier logging, and no dependence on machine-local temp paths.
+7. Make environment setup reproducible from the repo itself: `.venv`, declared Python requirements, workspace-managed npm installs, and env-driven secrets.
+8. When review comments expose a real defect or ambiguity, fix the code and also capture the durable lesson in guidance or checklists if it is likely to recur.
+9. After substantial changes, record what was actually verified and what was not; do not imply Docker, viewer, or end-to-end validation if it did not happen.
+10. On new machines or major environment transitions, do initial recon first, then anchor the next decisions to observed runtime behavior from the first user-reported test pass.
+
 ## Primary Runtime Paths
 
 ### Clinical path
@@ -209,22 +246,32 @@ Additional clinical rules:
 
 Preferred focused checks for the clinical slice:
 
-- `python -m pytest backend/tests/test_clinical_platform.py`
-- `python -m compileall backend/clinical backend/server.py`
+- `python3 -m pytest backend/tests/test_clinical_platform.py`
+- `python3 -m compileall backend/clinical backend/server.py backend/radsysx.py`
 - `npm run type-check --workspace frontend`
 - `npm run type-check --workspace viewer`
 - `npm run build --workspace viewer`
 
 Use broader suites only when the change demands it.
 
-If Docker Desktop with WSL integration is available, also validate the composed stack with Orthanc and nginx rather than assuming the local shell/dev servers are equivalent.
+Install missing Python dependencies into `.venv`; do not normalize one-off temp-path dependency shims as part of the expected workflow.
+
+If Docker Engine and Compose are available on the Linux host, also validate the composed stack with Orthanc and nginx rather than assuming the local shell/dev servers are equivalent.
 
 ## Commands
 
+### Linux Bootstrap
+
+- `python3 -m venv .venv`
+- `. .venv/bin/activate`
+- `python3 -m pip install --upgrade pip`
+- `python3 -m pip install -r backend/requirements.txt`
+- `npm install --legacy-peer-deps`
+
 ### Backend
 
-- `cd backend && python server.py`
-- `python -m pytest backend/tests/test_clinical_platform.py`
+- `. .venv/bin/activate && python3 backend/server.py`
+- `. .venv/bin/activate && python3 -m pytest backend/tests/test_clinical_platform.py`
 
 ### Frontend / Workspace
 
@@ -237,6 +284,8 @@ If Docker Desktop with WSL integration is available, also validate the composed 
 
 ### Local Clinical Stack
 
+- `export RADSYSX_ORTHANC_USERNAME=local-user`
+- `export RADSYSX_ORTHANC_PASSWORD=local-pass`
 - `docker compose up --build`
 - clinical public origin: `http://localhost:3000`
 - Next.js shell: `/`
@@ -279,10 +328,11 @@ The next major steps are:
 
 ## Recommended Next Tranche Plan
 
-If starting fresh after Phase 3, do the next tranche in this order:
+If starting from the current post-Phase-4-polish baseline, do the next tranche in this order:
 
-1. Keep the hardening/docs pass current with the shipped RadSysX runtime: secrets, auth mode enforcement, cookie posture, URL secrecy, streamed STOW handoff, and de-identified local scaffolding.
-2. Deepen the OHIF-native integration: move any remaining viewer-specific workflow logic from bootstrap-time helpers into extension/mode/service seams while preserving the opaque launch contract and backend-authoritative workspace behavior.
-3. Finish standards-native writeback: connect OHIF measurement tracking and segmentation flows directly to backend-mediated SR/SEG export through `POST /api/derived-results/stow`, then rehydrate those stored objects from Orthanc on reload.
-4. Validate the real local stack: run the nginx + frontend + viewer + backend + Orthanc compose stack and prove the end-to-end workflow for login, worklist launch, OHIF load, report save/finalize, shadow AI queueing, SR persistence, SEG persistence, workspace refresh, and audit visibility.
-5. Only after viewer/archive realism is stable, move to institutional identity/context: replace the seeded local personas with real identity/provider integration and begin the shift from seeded worklist data toward institutional context.
+1. Do a quick Linux host recon, then wait for the user's first Linux test report so the next fixes are grounded in observed runtime behavior rather than assumptions.
+2. Keep the hardening/docs pass current with the shipped RadSysX runtime: secrets, auth mode enforcement, cookie posture, URL secrecy, streamed STOW handoff, and de-identified local scaffolding.
+3. Deepen the OHIF-native integration: move any remaining viewer-specific workflow logic from bootstrap-time helpers into extension/mode/service seams while preserving the opaque launch contract and backend-authoritative workspace behavior.
+4. Finish standards-native writeback: connect OHIF measurement tracking and segmentation flows directly to backend-mediated SR/SEG export through `POST /api/derived-results/stow`, then rehydrate those stored objects from Orthanc on reload.
+5. Validate the real local stack: run the nginx + frontend + viewer + backend + Orthanc compose stack and prove the end-to-end workflow for login, worklist launch, OHIF load, report save/finalize, shadow AI queueing, SR persistence, SEG persistence, workspace refresh, and audit visibility.
+6. Only after viewer/archive realism is stable, move to institutional identity/context: replace the seeded local personas with real identity/provider integration and begin the shift from seeded worklist data toward institutional context.

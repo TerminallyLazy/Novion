@@ -347,7 +347,7 @@ def test_stow_endpoint_persists_backend_registered_refs(monkeypatch) -> None:
     assert workspace["derivedResults"][0]["metadata"]["stowFileName"] == "seg.dcm"
 
 
-def test_seed_orthanc_logs_without_study_uids(monkeypatch, capsys) -> None:
+def test_seed_orthanc_logs_without_identifiers(monkeypatch, capsys) -> None:
     pytest.importorskip("pydicom")
 
     try:
@@ -386,8 +386,9 @@ def test_seed_orthanc_logs_without_study_uids(monkeypatch, capsys) -> None:
     seed_orthanc_module.main()
 
     output = capsys.readouterr().out
-    assert "Seeded CT sample study ACC-CT-24001" in output
-    assert "Seeded MR sample study ACC-MR-24017" in output
+    assert "Seeded sample study 1 (CT)" in output
+    assert "Seeded sample study 2 (MR)" in output
     for study in seed_orthanc_module.SEED_STUDIES:
         assert study.study_uid not in output
         assert study.patient_name not in output
+        assert study.accession_number not in output

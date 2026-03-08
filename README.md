@@ -190,19 +190,43 @@ The most important clinical env vars are:
 
 Research-only integrations such as MCP/FHIR tools and BiomedParse still exist, but they do not define the clinical architecture.
 
+## Host Assumptions
+
+The preferred development and validation host is now native Linux.
+
+Operational guidance:
+
+- use native Linux Python, Node, npm, and Docker Engine / Compose
+- avoid WSL-specific path assumptions or Windows-only toolchain shims
+- do not rely on temporary `PYTHONPATH` hacks or undeclared global dependencies
+- prefer a repo-local `.venv` plus workspace-installed Node dependencies
+- when starting work in a fresh chat on the Linux machine, do a short recon first, then wait for the user's report from the first Linux app test pass before making deeper code changes
+
 ## Local Development
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 20+
+- npm
+- Docker Engine with Compose plugin if you want the one-origin stack
 
 ### Install
 
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r backend/requirements.txt
 npm install --legacy-peer-deps
 ```
 
-Backend dependencies are managed from `backend/requirements.txt`.
+Backend dependencies should be installed into `.venv`, not into ad hoc machine-local paths.
 
 ### Run backend directly
 
 ```bash
+. .venv/bin/activate
 python3 backend/server.py
 ```
 
@@ -215,6 +239,7 @@ npm run dev --workspace frontend
 ### Focused backend checks
 
 ```bash
+. .venv/bin/activate
 python3 -m compileall backend/clinical backend/server.py backend/radsysx.py
 python3 -m pytest backend/tests/test_clinical_platform.py
 ```
@@ -236,6 +261,17 @@ export RADSYSX_ORTHANC_USERNAME=local-user
 export RADSYSX_ORTHANC_PASSWORD=local-pass
 docker compose up --build
 ```
+
+### First Linux Validation Pass
+
+On the new Linux host, the first useful runtime checkpoint is:
+
+1. install dependencies with the `.venv` + `npm install` flow above
+2. run the focused backend and viewer checks
+3. attempt the actual app flow on Linux
+4. report what happened before widening the code-change scope
+
+That first report should ideally cover backend startup, frontend startup, viewer build/load, login, worklist, viewer launch, and compose-stack behavior if Docker is available.
 
 Public routes:
 

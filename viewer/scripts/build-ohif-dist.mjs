@@ -49,13 +49,10 @@ function copyWorkspaceAsset(relativeParts, outputName) {
 function writeAppConfig() {
   const config = `/** @type {AppTypes.Config} */
 (function radsysxAppConfig() {
-  const resolved = window.__RADSYSX_LAUNCH__;
-  const runtime = resolved?.viewerRuntime ?? {};
   window.config = {
     name: "config/radsysx-clinical.js",
-    routerBasename: runtime.viewerBasePath ?? "/viewer",
+    routerBasename: "/viewer",
     extensions: [
-      window.__RADSYSX_OHIF_EXTENSION__,
       "@ohif/extension-default",
       "@ohif/extension-cornerstone",
       "@ohif/extension-measurement-tracking",
@@ -63,6 +60,7 @@ function writeAppConfig() {
       "@ohif/extension-cornerstone-dicom-seg",
       "@ohif/extension-dicom-pdf",
       "@ohif/extension-dicom-video",
+      window.__RADSYSX_OHIF_EXTENSION__,
     ],
     modes: [
       window.__RADSYSX_OHIF_MODE__,
@@ -76,14 +74,14 @@ function writeAppConfig() {
     defaultDataSourceName: "dicomweb",
     dataSources: [
       {
-        namespace: "@ohif/extension-default.dataSourcesModule.dicomweb",
+        namespace: "@radsysx/extension-clinical.dataSourcesModule.dicomweb",
         sourceName: "dicomweb",
         configuration: {
           friendlyName: "RadSysX Clinical DICOMweb",
           name: "radsysxOrthanc",
-          qidoRoot: runtime.qidoRoot ?? "/dicom-web",
-          wadoRoot: runtime.wadoRoot ?? "/dicom-web",
-          wadoUriRoot: runtime.wadoUriRoot ?? "/dicom-web",
+          qidoRoot: "/dicom-web",
+          wadoRoot: "/dicom-web",
+          wadoUriRoot: "/dicom-web",
           qidoSupportsIncludeField: true,
           supportsReject: false,
           supportsStow: false,

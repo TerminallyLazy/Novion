@@ -370,6 +370,57 @@
 
   window.__RADSYSX_OHIF_EXTENSION__ = {
     id: EXTENSION_ID,
+    getDataSourcesModule() {
+      return [
+        {
+          name: "dicomweb",
+          type: "webApi",
+          createDataSource(configuration) {
+            const defaultExtension = globalThis["ohif-extension-default"];
+            const defaultModule = defaultExtension
+              ?.getDataSourcesModule?.()
+              ?.find((module) => module.name === "dicomweb");
+
+            if (!defaultModule) {
+              throw new Error("The default OHIF dicomweb data source is unavailable.");
+            }
+
+            const dataSource = defaultModule.createDataSource(configuration);
+            const originalInitialize = dataSource.initialize?.bind(dataSource);
+            const originalGetStudyInstanceUIDs = dataSource.getStudyInstanceUIDs?.bind(dataSource);
+            const originalRetrieveSeriesMetadata =
+              dataSource.retrieve?.series?.metadata?.bind(dataSource.retrieve.series);
+
+            if (originalInitialize) {
+              dataSource.initialize = async function initialize(initArgs) {
+                await window.__RADSYSX_BOOTSTRAP_PROMISE__;
+                return originalInitialize(initArgs);
+              };
+            }
+
+            if (originalGetStudyInstanceUIDs) {
+              dataSource.getStudyInstanceUIDs = function getStudyInstanceUIDs(initArgs) {
+                const studyInstanceUIDs = originalGetStudyInstanceUIDs(initArgs);
+                if (studyInstanceUIDs?.filter(Boolean).length) {
+                  return studyInstanceUIDs;
+                }
+
+                const launchStudyUid = getLaunchContext()?.studyInstanceUID;
+                return launchStudyUid ? [launchStudyUid] : studyInstanceUIDs;
+              };
+            }
+
+            if (dataSource.retrieve?.series && originalRetrieveSeriesMetadata) {
+              dataSource.retrieve.series.metadata = function metadata(args) {
+                return originalRetrieveSeriesMetadata(injectLaunchSeriesFilters(args));
+              };
+            }
+
+            return dataSource;
+          },
+        },
+      ];
+    },
     getPanelModule() {
       return [
         {
@@ -435,5 +486,38 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function injectLaunchSeriesFilters(args) {
+    const launchContext = getLaunchContext();
+    const seriesInstanceUIDs = launchContext?.seriesInstanceUIDs ?? [];
+    if (seriesInstanceUIDs.length === 0) {
+      return args;
+    }
+
+    const filters = {
+      ...(args?.filters ?? {}),
+    };
+    const hasSeriesFilter =
+      filters.SeriesInstanceUID ||
+      filters.SeriesInstanceUIDs ||
+      filters.seriesInstanceUID ||
+      filters.seriesInstanceUIDs;
+
+    if (hasSeriesFilter) {
+      return args;
+    }
+
+    return {
+      ...(args ?? {}),
+      filters: {
+        ...filters,
+        seriesInstanceUIDs,
+      },
+    };
+  }
+
+  function getLaunchContext() {
+    return window.__RADSYSX_LAUNCH__?.context ?? null;
   }
 })();

@@ -63,14 +63,10 @@ services:
     environment:
       RADSYSX_ORTHANC_USERNAME: "${RADSYSX_ORTHANC_USERNAME:?Set RADSYSX_ORTHANC_USERNAME}"
       RADSYSX_ORTHANC_PASSWORD: "${RADSYSX_ORTHANC_PASSWORD:?Set RADSYSX_ORTHANC_PASSWORD}"
-    command: >
-      sh -lc "sed
-      -e 's/__RADSYSX_ORTHANC_USERNAME__/$$RADSYSX_ORTHANC_USERNAME/g'
-      -e 's/__RADSYSX_ORTHANC_PASSWORD__/$$RADSYSX_ORTHANC_PASSWORD/g'
-      /etc/orthanc/orthanc.json > /tmp/orthanc.json &&
-      Orthanc /tmp/orthanc.json"
+    command: sh /usr/local/bin/render-orthanc-config.sh
     volumes:
       - ./deploy/clinical-stack/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./deploy/clinical-stack/render-orthanc-config.sh:/usr/local/bin/render-orthanc-config.sh:ro
       - orthanc-storage:/var/lib/orthanc/db
 
   orthanc-seed:

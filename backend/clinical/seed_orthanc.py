@@ -110,7 +110,7 @@ def main() -> None:
         else:
             raise RuntimeError("Orthanc DICOMweb endpoint did not become ready in time.")
 
-        for study in SEED_STUDIES:
+        for index, study in enumerate(SEED_STUDIES, start=1):
             existing = client.get(
                 "/studies",
                 params={"StudyInstanceUID": study.study_uid, "limit": 1},
@@ -126,7 +126,7 @@ def main() -> None:
                 headers={"Content-Type": "application/dicom"},
             )
             store.raise_for_status()
-            print(f"Seeded {study.modality} sample study {study.accession_number}")
+            print(f"Seeded sample study {index} ({study.modality})")
 
 
 if __name__ == "__main__":
