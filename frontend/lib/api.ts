@@ -1,4 +1,20 @@
 import { Study, Annotation, Report, AIAnalysis } from '@prisma/client';
+export { clinicalApi } from '@/lib/clinical/client';
+export type {
+  AIJobRecord,
+  AIJobRequest,
+  AuditEvent,
+  ClinicalPlatformConfig,
+  DerivedDicomObject,
+  DerivedResultRequest,
+  ImagingLaunchContext,
+  ImagingLaunchRequest,
+  ImagingLaunchResponse,
+  ReportDraftRequest,
+  ReportRecord,
+  WorklistResponse,
+  WorklistRow,
+} from '@/lib/clinical/contracts';
 
 // API endpoints
 const API_BASE = '/api';

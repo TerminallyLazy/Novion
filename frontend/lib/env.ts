@@ -1,32 +1,63 @@
+export type AppMode = "research" | "pilot" | "clinical";
+
+const DEFAULT_BACKEND_URL = "http://localhost:8000";
+
+function normalizeMode(value: string | undefined): AppMode {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "pilot":
+      return "pilot";
+    case "clinical":
+      return "clinical";
+    default:
+      return "research";
+  }
+}
+
+export function getAppMode(): AppMode {
+  return normalizeMode(
+    process.env.NOVION_APP_MODE ?? process.env.NEXT_PUBLIC_NOVION_APP_MODE,
+  );
+}
+
+export function getPublicAppMode(): AppMode {
+  return normalizeMode(process.env.NEXT_PUBLIC_NOVION_APP_MODE);
+}
+
+export function isResearchMode(): boolean {
+  return getAppMode() === "research";
+}
+
+export function isExperimentalImagingEnabled(): boolean {
+  return getAppMode() === "research";
+}
+
+export function getBackendBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_BACKEND_URL ?? DEFAULT_BACKEND_URL).replace(/\/$/, "");
+}
+
+export function getViewerBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_VIEWER_BASE_URL ?? "/viewer").replace(/\/$/, "");
+}
+
 export function getGeminiApiKey(): string {
   const apiKey = process.env.GEMINI_API_KEY;
-  
-  // Debug information
-  console.log('Environment check:', {
-    hasApiKey: !!apiKey,
-    nodeEnv: process.env.NODE_ENV,
-    allEnvKeys: Object.keys(process.env).filter(key => key.includes('GEMINI')),
-  });
-  
   if (!apiKey) {
     throw new Error(
-      'GEMINI_API_KEY is not set. Please add it to your .env.local file:\n' +
-      'GEMINI_API_KEY=your_api_key_here'
+      "GEMINI_API_KEY is not set. Configure it only for research workflows.",
     );
   }
   return apiKey;
 }
 
-// Validate environment variables at startup - now optional
 export function validateEnv() {
-  try {
-    getGeminiApiKey();
-    console.log('Environment variables validated successfully');
-  } catch (error) {
-    console.error('Environment validation failed:', error);
-    // Don't throw in development to allow the app to start
-    if (process.env.NODE_ENV === 'production') {
-      throw error;
+  if (getAppMode() === "research") {
+    try {
+      getGeminiApiKey();
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw error;
+      }
+      console.warn("Research-only Gemini features are unavailable.");
     }
   }
-} 
+}
