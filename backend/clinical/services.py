@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 from datetime import timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -85,7 +85,7 @@ class ClinicalPlatformService:
             actor_role=actor.primary_role,
             signature=signature,
         )
-        viewer_url = f"{self._settings.viewer_base_url}?launch={quote(launch_token, safe='')}"
+        viewer_url = self._build_viewer_launch_url(launch_token)
 
         self._repository.add_audit_event(
             self._build_audit_event(
@@ -349,6 +349,21 @@ class ClinicalPlatformService:
                 audit_panel=True,
                 direct_stow=False,
             ),
+        )
+
+    def _build_viewer_launch_url(self, launch_token: str) -> str:
+        split = urlsplit(self._settings.viewer_base_url.strip())
+        path = split.path or "/"
+        normalized_path = path if path.endswith("/") else f"{path}/"
+        query = f"launch={quote(launch_token, safe='')}"
+        return urlunsplit(
+            (
+                split.scheme,
+                split.netloc,
+                normalized_path,
+                query,
+                split.fragment,
+            )
         )
 
     def _sign_context(self, context: ImagingLaunchContext) -> str:

@@ -286,7 +286,7 @@ docker compose up --build
 ```
 
 This compose stack validates the governed clinical surface only. It does not install or exercise the full research/agent backend dependency set.
-Use `http://localhost:3000` through nginx for governed validation. The raw viewer dev server on port `3001` is only an internal asset server and is not a supported clinical entry point.
+Use `http://localhost:3000` through nginx for governed validation. The raw viewer dev server on port `3001` is only an internal asset server and is not a supported clinical entry point. The governed viewer launch should resolve under `/viewer/` so OHIF static assets stay mounted beneath the viewer base path.
 
 ### Recommended whole-runtime validation order
 

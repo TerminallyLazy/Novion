@@ -302,7 +302,7 @@ Use the workspace script for the frontend dev server; it is the supported local 
 - clinical public origin: `http://localhost:3000`
 - do not validate the governed viewer flow by opening the raw viewer dev server on port `3001`; use the nginx-served `http://localhost:3000` origin instead
 - Next.js shell: `/`
-- OHIF viewer: `/viewer`
+- OHIF viewer: `/viewer/`
 - FastAPI: `/api`
 - Orthanc DICOMweb: `/dicom-web`
 

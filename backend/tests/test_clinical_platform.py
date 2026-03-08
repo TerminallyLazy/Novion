@@ -184,7 +184,7 @@ def test_imaging_launch_returns_opaque_token_and_viewer_url_without_phi_in_url()
     body = response.json()
     assert body["signature"]
     assert body["launchToken"].startswith("launch-")
-    assert body["viewerUrl"].startswith("http://localhost:3000/viewer?launch=")
+    assert body["viewerUrl"].startswith("http://localhost:3000/viewer/?launch=")
     assert "study=" not in body["viewerUrl"]
     assert body["context"]["studyInstanceUID"] == payload["studyInstanceUID"]
     assert body["context"]["patientRef"] == "Patient/example-ct-01"

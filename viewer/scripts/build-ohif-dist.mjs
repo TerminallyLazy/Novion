@@ -145,18 +145,28 @@ function patchIndexHtml() {
 }
 
 function patchRuntimePublicPath() {
-  const bundlePath = findSingleDistFile("app.bundle.*.js");
-  let bundle = fs.readFileSync(bundlePath, "utf8");
+  const bundlePaths = fs
+    .readdirSync(distRoot)
+    .filter((fileName) => fileName.endsWith(".js"))
+    .map((fileName) => path.join(distRoot, fileName));
   const current = '__webpack_require__.p = "/";';
   const next =
-    '__webpack_require__.p = window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || "/";';
+    '__webpack_require__.p = self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL || window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || "/";';
+  let patchedCount = 0;
 
-  if (!bundle.includes(current)) {
-    throw new Error(`Unable to patch OHIF runtime public path in ${path.basename(bundlePath)}.`);
+  for (const bundlePath of bundlePaths) {
+    const bundle = fs.readFileSync(bundlePath, "utf8");
+    if (!bundle.includes(current)) {
+      continue;
+    }
+
+    fs.writeFileSync(bundlePath, bundle.replaceAll(current, next), "utf8");
+    patchedCount += 1;
   }
 
-  bundle = bundle.replace(current, next);
-  fs.writeFileSync(bundlePath, bundle, "utf8");
+  if (patchedCount === 0) {
+    throw new Error("Unable to patch OHIF runtime public path in copied dist bundles.");
+  }
 }
 
 function patchCssAssetUrls() {
@@ -212,22 +222,4 @@ function patchServiceWorkerInit() {
   if (source.includes(current)) {
     fs.writeFileSync(initPath, source.replace(current, next), "utf8");
   }
-}
-
-function findSingleDistFile(pattern) {
-  const matches = fs
-    .readdirSync(distRoot)
-    .filter((fileName) => matchesGlob(fileName, pattern))
-    .map((fileName) => path.join(distRoot, fileName));
-
-  if (matches.length !== 1) {
-    throw new Error(`Expected exactly one dist file matching ${pattern}, found ${matches.length}.`);
-  }
-
-  return matches[0];
-}
-
-function matchesGlob(fileName, pattern) {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`).test(fileName);
 }
