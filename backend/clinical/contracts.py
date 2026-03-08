@@ -26,6 +26,11 @@ class AppMode(str, Enum):
     CLINICAL = "clinical"
 
 
+class AuthMode(str, Enum):
+    LOCAL = "local"
+    OIDC = "oidc"
+
+
 class ImagingLaunchMode(str, Enum):
     DIAGNOSTIC = "diagnostic"
     REVIEW = "review"
@@ -138,17 +143,37 @@ class StoreResult(ClinicalModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SessionClaims(ClinicalModel):
+    sub: str
+    username: str
+    name: str
+    roles: list[str] = Field(default_factory=list)
+    scopes: list[str] = Field(default_factory=list)
+    expires_at: str = Field(alias="expiresAt")
+
+    @property
+    def primary_role(self) -> str:
+        return self.roles[0] if self.roles else "radiologist"
+
+
+class SessionResponse(ClinicalModel):
+    authenticated: bool
+    session: SessionClaims | None = None
+
+
+class LocalLoginRequest(ClinicalModel):
+    username: str
+
+
+class LocalLoginResponse(ClinicalModel):
+    session: SessionClaims
+
+
 class ImagingLaunchRequest(ClinicalModel):
     study_instance_uid: str = Field(alias="studyInstanceUID")
     series_instance_uids: list[str] = Field(default_factory=list, alias="seriesInstanceUIDs")
-    patient_ref: str
-    encounter_ref: str | None = None
-    accession_number: str | None = None
-    prior_study_uids: list[str] = Field(default_factory=list, alias="priorStudyUIDs")
     mode: ImagingLaunchMode = ImagingLaunchMode.DIAGNOSTIC
     requested_scopes: list[str] = Field(default_factory=list)
-    actor_user_id: str = "system"
-    actor_role: str = "radiologist"
     trace_id: str | None = None
 
 
@@ -172,11 +197,34 @@ class ImagingLaunchResponse(ClinicalModel):
     viewer_url: str
 
 
+class ViewerFeatureFlags(ClinicalModel):
+    local_file_import: bool = Field(default=False, alias="localFileImport")
+    report_panel: bool = Field(default=True, alias="reportPanel")
+    ai_panel: bool = Field(default=True, alias="aiPanel")
+    derived_panel: bool = Field(default=True, alias="derivedPanel")
+    audit_panel: bool = Field(default=True, alias="auditPanel")
+    direct_stow: bool = Field(default=False, alias="directStow")
+
+
+class ViewerRuntime(ClinicalModel):
+    viewer_kind: str = Field(alias="viewerKind")
+    viewer_base_path: str = Field(alias="viewerBasePath")
+    study_instance_uid: str = Field(alias="studyInstanceUID")
+    series_instance_uids: list[str] = Field(default_factory=list, alias="seriesInstanceUIDs")
+    qido_root: str = Field(alias="qidoRoot")
+    wado_root: str = Field(alias="wadoRoot")
+    wado_uri_root: str = Field(alias="wadoUriRoot")
+    stow_root: str = Field(alias="stowRoot")
+    auth_mode: AuthMode = Field(alias="authMode")
+    feature_flags: ViewerFeatureFlags = Field(alias="featureFlags")
+
+
 class ImagingLaunchResolveResponse(ClinicalModel):
     launch_token: str = Field(alias="launchToken")
     context: ImagingLaunchContext
     signature: str
     study_wado_rs_uri: str = Field(alias="studyWadoRsUri")
+    viewer_runtime: ViewerRuntime = Field(alias="viewerRuntime")
 
 
 class WorklistRow(ClinicalModel):
@@ -204,7 +252,6 @@ class ReportDraftRequest(ClinicalModel):
     study_instance_uid: str = Field(alias="studyInstanceUID")
     diagnostic_report_id: str | None = None
     status: ReportStatus = ReportStatus.DRAFT
-    author_user_id: str
     reviewer_user_id: str | None = None
     findings_summary: str
     impression: str
@@ -236,7 +283,6 @@ class AIJobCreateRequest(ClinicalModel):
     model_id: str
     model_version: str
     input_hash: str
-    requested_by: str
     output_refs: list[str] = Field(default_factory=list)
     trace_id: str | None = None
 
@@ -271,8 +317,6 @@ class DerivedResultRecord(ClinicalModel):
 
 
 class DerivedResultRequest(ClinicalModel):
-    actor_user_id: str
-    actor_role: str
     objects: list[DerivedDicomObject]
     trace_id: str | None = None
 
@@ -280,6 +324,17 @@ class DerivedResultRequest(ClinicalModel):
 class DerivedResultResponse(ClinicalModel):
     result: StoreResult
     trace_id: str
+
+
+class DerivedResultStowRequest(ClinicalModel):
+    study_instance_uid: str = Field(alias="studyInstanceUID")
+    object_type: str
+    storage_class: str
+    series_instance_uid: str | None = Field(default=None, alias="seriesInstanceUID")
+    sop_instance_uid: str | None = Field(default=None, alias="sopInstanceUID")
+    content_type: str = "application/dicom"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    trace_id: str | None = None
 
 
 class AuditEvent(ClinicalModel):
@@ -322,6 +377,17 @@ class LaunchSessionRecord(ClinicalModel):
     expires_at: str
     created_at: str
     resolved_at: str | None = None
+
+
+class ClinicalPlatformConfig(ClinicalModel):
+    mode: AppMode
+    experimental_routes_enabled: bool = Field(alias="experimentalRoutesEnabled")
+    viewer_base_url: str = Field(alias="viewerBaseUrl")
+    viewer_kind: str = Field(alias="viewerKind")
+    viewer_base_path: str = Field(alias="viewerBasePath")
+    auth_mode: AuthMode = Field(alias="authMode")
+    ai_default_workflow_mode: WorkflowMode = Field(alias="aiDefaultWorkflowMode")
+    ai_allow_active: bool = Field(alias="aiAllowActive")
 
 
 def utc_now() -> datetime:

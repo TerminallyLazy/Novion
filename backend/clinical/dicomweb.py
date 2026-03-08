@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
+from uuid import uuid4
 
 import httpx
 
 from .config import ClinicalPlatformSettings
 from .contracts import (
     DerivedDicomObject,
+    DerivedResultStowRequest,
     SeriesMetadata,
     StoreResult,
     StudyMetadata,
@@ -25,6 +27,12 @@ class DICOMwebAdapter(Protocol):
     async def get_wado_rs_uri(self, study_uid: str, series_uid: str | None = None) -> str: ...
 
     async def store_derived_objects(self, objects: list[DerivedDicomObject]) -> StoreResult: ...
+
+    async def store_uploaded_instances(
+        self,
+        request: DerivedResultStowRequest,
+        files: list[tuple[str, bytes]],
+    ) -> StoreResult: ...
 
 
 class OrthancDICOMwebAdapter:
@@ -63,22 +71,69 @@ class OrthancDICOMwebAdapter:
         return StudySearchPage(items=items, total=len(items))
 
     async def get_study_metadata(self, study_uid: str) -> StudyMetadata:
-        wado_rs = await self.get_wado_rs_uri(study_uid)
+        if not self._settings.orthanc_base_url:
+            wado_rs = await self.get_wado_rs_uri(study_uid)
+            return StudyMetadata(
+                study_instance_uid=study_uid,
+                patient_ref="external",
+                modality="OT",
+                description="External DICOMweb study",
+                study_date="",
+                archive_ref=wado_rs,
+            )
+
+        async with self._client() as client:
+            response = await client.get("/studies", params={"StudyInstanceUID": study_uid, "limit": 1})
+            response.raise_for_status()
+            payload = response.json()
+
+        if not payload:
+            return StudyMetadata(
+                study_instance_uid=study_uid,
+                patient_ref="external",
+                modality="OT",
+                description="External DICOMweb study",
+                study_date="",
+                archive_ref=await self.get_wado_rs_uri(study_uid),
+            )
+
+        item = payload[0]
         return StudyMetadata(
-            study_instance_uid=study_uid,
-            patient_ref="external",
-            modality="OT",
-            description="External DICOMweb study",
-            study_date="",
-            archive_ref=wado_rs,
+            study_instance_uid=self._tag_value(item, "0020000D", study_uid),
+            patient_ref=self._tag_value(item, "00100020", "external"),
+            accession_number=self._tag_value(item, "00080050"),
+            modality=self._tag_value(item, "00080061", "OT"),
+            description=self._tag_value(item, "00081030", "External DICOMweb study"),
+            study_date=self._tag_value(item, "00080020", ""),
+            archive_ref=await self.get_wado_rs_uri(study_uid),
         )
 
     async def get_series_metadata(self, study_uid: str, series_uid: str) -> SeriesMetadata:
+        if not self._settings.orthanc_base_url:
+            return SeriesMetadata(
+                study_instance_uid=study_uid,
+                series_instance_uid=series_uid,
+                modality="OT",
+                description="External DICOMweb series",
+            )
+
+        async with self._client() as client:
+            response = await client.get(f"/studies/{study_uid}/series/{series_uid}/metadata")
+            response.raise_for_status()
+            payload = response.json()
+
+        first_item = payload[0] if payload else {}
+        sop_instance_uids = [
+            self._tag_value(item, "00080018", "")
+            for item in payload
+            if self._tag_value(item, "00080018", "")
+        ]
         return SeriesMetadata(
             study_instance_uid=study_uid,
             series_instance_uid=series_uid,
-            modality="OT",
-            description="External DICOMweb series",
+            modality=self._tag_value(first_item, "00080060", "OT"),
+            description=self._tag_value(first_item, "0008103E", "External DICOMweb series"),
+            sop_instance_uids=sop_instance_uids,
         )
 
     async def get_wado_rs_uri(self, study_uid: str, series_uid: str | None = None) -> str:
@@ -88,7 +143,6 @@ class OrthancDICOMwebAdapter:
         return f"{base}/studies/{study_uid}"
 
     async def store_derived_objects(self, objects: list[DerivedDicomObject]) -> StoreResult:
-        # This foundation pass persists the contract and storage intent, not bulk DICOM blobs.
         stored = [
             object_.payload_ref
             or f"{object_.object_type}:{object_.study_instance_uid}:{index}"
@@ -97,6 +151,53 @@ class OrthancDICOMwebAdapter:
         warnings: list[str] = []
         if not self._settings.orthanc_base_url:
             warnings.append("Orthanc DICOMweb endpoint is not configured; results were staged logically only.")
+        return StoreResult(stored=stored, warnings=warnings)
+
+    async def store_uploaded_instances(
+        self,
+        request: DerivedResultStowRequest,
+        files: list[tuple[str, bytes]],
+    ) -> StoreResult:
+        warnings: list[str] = []
+        if not self._settings.orthanc_base_url:
+            warnings.append("Orthanc DICOMweb endpoint is not configured; results were staged logically only.")
+            return StoreResult(
+                stored=[
+                    self._build_public_instance_ref(
+                        request.study_instance_uid,
+                        request.series_instance_uid,
+                        request.sop_instance_uid or f"unconfigured-{index}",
+                    )
+                    for index, _ in enumerate(files, start=1)
+                ],
+                warnings=warnings,
+            )
+
+        if len(files) == 1:
+            headers = {"Content-Type": request.content_type}
+            content = files[0][1]
+        else:
+            boundary = f"novion-{uuid4().hex}"
+            headers = {
+                "Content-Type": f'multipart/related; type="{request.content_type}"; boundary={boundary}'
+            }
+            content = self._build_multipart_related(boundary, files, request.content_type)
+
+        async with self._client() as client:
+            response = await client.post("/studies", headers=headers, content=content)
+            response.raise_for_status()
+            payload = response.json() if response.content else {}
+
+        stored = self._stored_refs_from_stow_response(payload, request, len(files))
+        if not stored:
+            stored = [
+                self._build_public_instance_ref(
+                    request.study_instance_uid,
+                    request.series_instance_uid,
+                    request.sop_instance_uid or f"stored-{index}",
+                )
+                for index, _ in enumerate(files, start=1)
+            ]
         return StoreResult(stored=stored, warnings=warnings)
 
     def _client(self) -> httpx.AsyncClient:
@@ -109,3 +210,75 @@ class OrthancDICOMwebAdapter:
             auth=auth,
             timeout=10.0,
         )
+
+    @staticmethod
+    def _tag_value(item: dict[str, Any], tag: str, default: Any = None) -> Any:
+        value = item.get(tag, {}).get("Value", [default])
+        if not value:
+            return default
+        first = value[0]
+        if isinstance(first, list) and first:
+            return first[0]
+        return first
+
+    def _build_public_instance_ref(
+        self,
+        study_uid: str,
+        series_uid: str | None,
+        sop_uid: str,
+    ) -> str:
+        root = self._settings.dicomweb_wado_root or "/dicom-web"
+        if series_uid:
+            return f"{root}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}"
+        return f"{root}/studies/{study_uid}/instances/{sop_uid}"
+
+    def _stored_refs_from_stow_response(
+        self,
+        payload: dict[str, Any],
+        request: DerivedResultStowRequest,
+        file_count: int,
+    ) -> list[str]:
+        sequence = payload.get("00081199", {}).get("Value", [])
+        stored: list[str] = []
+        for item in sequence:
+            sop_uid = self._tag_value(item, "00081155")
+            if not sop_uid:
+                continue
+            stored.append(
+                self._build_public_instance_ref(
+                    request.study_instance_uid,
+                    request.series_instance_uid,
+                    sop_uid,
+                )
+            )
+
+        if stored or file_count == 0:
+            return stored
+
+        fallback_sop = request.sop_instance_uid
+        if fallback_sop:
+            return [
+                self._build_public_instance_ref(
+                    request.study_instance_uid,
+                    request.series_instance_uid,
+                    fallback_sop,
+                )
+            ]
+        return []
+
+    @staticmethod
+    def _build_multipart_related(
+        boundary: str,
+        files: list[tuple[str, bytes]],
+        content_type: str,
+    ) -> bytes:
+        parts: list[bytes] = []
+        delimiter = f"--{boundary}\r\n".encode("ascii")
+        closing = f"--{boundary}--\r\n".encode("ascii")
+        for _, payload in files:
+            parts.append(delimiter)
+            parts.append(f"Content-Type: {content_type}\r\n\r\n".encode("ascii"))
+            parts.append(payload)
+            parts.append(b"\r\n")
+        parts.append(closing)
+        return b"".join(parts)

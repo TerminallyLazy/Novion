@@ -4,7 +4,7 @@ import os
 from functools import lru_cache
 from typing import cast
 
-from .contracts import AppMode, WorkflowMode
+from .contracts import AppMode, AuthMode, WorkflowMode
 from .db import default_database_url
 
 
@@ -19,10 +19,22 @@ class ClinicalPlatformSettings:
             "NOVION_VIEWER_BASE_URL",
             "http://localhost:3000/viewer",
         )
+        self.viewer_kind = os.getenv("NOVION_VIEWER_KIND", "ohif")
+        self.viewer_base_path = os.getenv("NOVION_VIEWER_BASE_PATH", "/viewer")
+        self.auth_mode = self._read_auth_mode("NOVION_AUTH_MODE", AuthMode.LOCAL)
         self.clinical_api_secret = os.getenv(
             "NOVION_CLINICAL_API_SECRET",
             "development-only-secret-change-me",
         )
+        self.session_secret = os.getenv(
+            "NOVION_SESSION_SECRET",
+            self.clinical_api_secret,
+        )
+        self.session_cookie_name = os.getenv(
+            "NOVION_SESSION_COOKIE_NAME",
+            "novion_clinical_session",
+        )
+        self.session_ttl_seconds = int(os.getenv("NOVION_SESSION_TTL_SECONDS", "28800"))
         self.clinical_database_url = os.getenv(
             "NOVION_CLINICAL_DATABASE_URL",
             default_database_url(),
@@ -31,6 +43,26 @@ class ClinicalPlatformSettings:
         self.orthanc_base_url = os.getenv("ORTHANC_DICOMWEB_URL", "").rstrip("/")
         self.orthanc_username = os.getenv("ORTHANC_USERNAME")
         self.orthanc_password = os.getenv("ORTHANC_PASSWORD")
+        self.dicomweb_public_base_url = os.getenv(
+            "NOVION_DICOMWEB_PUBLIC_BASE_URL",
+            "/dicom-web",
+        ).rstrip("/")
+        self.dicomweb_qido_root = os.getenv(
+            "NOVION_DICOMWEB_QIDO_ROOT",
+            self.dicomweb_public_base_url or "/dicom-web",
+        ).rstrip("/")
+        self.dicomweb_wado_root = os.getenv(
+            "NOVION_DICOMWEB_WADO_ROOT",
+            self.dicomweb_public_base_url or "/dicom-web",
+        ).rstrip("/")
+        self.dicomweb_wado_uri_root = os.getenv(
+            "NOVION_DICOMWEB_WADO_URI_ROOT",
+            self.dicomweb_public_base_url or "/dicom-web",
+        ).rstrip("/")
+        self.dicomweb_stow_root = os.getenv(
+            "NOVION_DICOMWEB_STOW_ROOT",
+            self.dicomweb_public_base_url or "/dicom-web",
+        ).rstrip("/")
         self.ai_default_workflow_mode = self._read_workflow_mode(
             "NOVION_AI_DEFAULT_WORKFLOW_MODE",
             WorkflowMode.SHADOW,
@@ -72,6 +104,14 @@ class ClinicalPlatformSettings:
         raw = os.getenv(name, default.value).strip().lower()
         try:
             return WorkflowMode(raw)
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _read_auth_mode(name: str, default: AuthMode) -> AuthMode:
+        raw = os.getenv(name, default.value).strip().lower()
+        try:
+            return AuthMode(raw)
         except ValueError:
             return default
 

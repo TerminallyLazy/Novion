@@ -1,0 +1,13 @@
+{
+  "Name": "Novion Orthanc",
+  "StorageDirectory": "/var/lib/orthanc/db",
+  "AuthenticationEnabled": true,
+  "RemoteAccessAllowed": true,
+  "RegisteredUsers": {
+    "orthanc": "orthanc"
+  },
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/"
+  }
+}

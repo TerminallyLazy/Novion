@@ -100,7 +100,12 @@ class ClinicalRepository:
                 resolved_at=to_iso_z(model.resolved_at) if model.resolved_at else None,
             )
 
-    def save_report(self, request: ReportDraftRequest) -> ReportRecord:
+    def save_report(
+        self,
+        request: ReportDraftRequest,
+        *,
+        author_user_id: str,
+    ) -> ReportRecord:
         with self._session_factory() as session:
             study = self._ensure_study(session, request.study_instance_uid)
             model = session.get(ReportModel, request.report_id) if request.report_id else None
@@ -118,7 +123,7 @@ class ClinicalRepository:
             model.study_instance_uid = study.study_instance_uid
             model.diagnostic_report_id = request.diagnostic_report_id
             model.status = request_status
-            model.author_user_id = request.author_user_id
+            model.author_user_id = author_user_id
             model.reviewer_user_id = request.reviewer_user_id
             model.findings_summary = request.findings_summary
             model.impression = request.impression
@@ -140,7 +145,12 @@ class ClinicalRepository:
             session.refresh(model)
             return self._to_report_record(model)
 
-    def create_ai_job(self, request: AIJobCreateRequest) -> AIJobRecord:
+    def create_ai_job(
+        self,
+        request: AIJobCreateRequest,
+        *,
+        requested_by: str,
+    ) -> AIJobRecord:
         with self._session_factory() as session:
             study = self._ensure_study(session, request.study_instance_uid)
             now = datetime.utcnow()
@@ -153,7 +163,7 @@ class ClinicalRepository:
                 model_id=request.model_id,
                 model_version=request.model_version,
                 input_hash=request.input_hash,
-                requested_by=request.requested_by,
+                requested_by=requested_by,
                 status=AIJobStatus.QUEUED.value,
                 output_refs=request.output_refs,
                 created_at=now,

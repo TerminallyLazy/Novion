@@ -6,11 +6,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, ShieldCheck, Stethoscope } from "lucide-react";
 
 import { clinicalApi } from "@/lib/clinical/client";
-import type { ClinicalPlatformConfig, WorklistRow } from "@/lib/clinical/contracts";
+import type {
+  ClinicalPlatformConfig,
+  SessionClaims,
+  WorklistRow,
+} from "@/lib/clinical/contracts";
 
 export default function WorklistPage() {
   const router = useRouter();
   const [config, setConfig] = useState<ClinicalPlatformConfig | null>(null);
+  const [session, setSession] = useState<SessionClaims | null>(null);
   const [rows, setRows] = useState<WorklistRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [launchingStudyUid, setLaunchingStudyUid] = useState<string | null>(null);
@@ -20,12 +25,19 @@ export default function WorklistPage() {
 
     async function load() {
       try {
+        const sessionResponse = await clinicalApi.getSession();
+        if (!sessionResponse.authenticated || !sessionResponse.session) {
+          router.replace("/login?next=%2Fworklist");
+          return;
+        }
+
         const [platformConfig, worklist] = await Promise.all([
           clinicalApi.getPlatformConfig(),
           clinicalApi.getWorklist(),
         ]);
 
         if (!cancelled) {
+          setSession(sessionResponse.session);
           setConfig(platformConfig);
           setRows(worklist.rows);
         }
@@ -40,7 +52,7 @@ export default function WorklistPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   const headline = useMemo(() => {
     if (!config) {
@@ -54,18 +66,21 @@ export default function WorklistPage() {
     try {
       const launch = await clinicalApi.launchImaging({
         studyInstanceUID: row.studyInstanceUID,
-        accessionNumber: row.accessionNumber,
-        patientRef: row.patientRef,
-        encounterRef: row.encounterRef,
-        priorStudyUIDs: row.priorStudyUIDs,
-        actorUserId: "demo-radiologist",
-        actorRole: "radiologist",
       });
       router.push(launch.viewerUrl);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to launch viewer.");
     } finally {
       setLaunchingStudyUid(null);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await clinicalApi.logout();
+      router.replace("/login");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to end clinical session.");
     }
   };
 
@@ -87,12 +102,27 @@ export default function WorklistPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {session && (
+                <div className="text-right text-sm text-slate-300">
+                  <div>{session.name}</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    {session.roles.join(", ")}
+                  </div>
+                </div>
+              )}
               <Link
                 href="/"
                 className="rounded-full border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
               >
                 Research workstation
               </Link>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-300/20"
+              >
+                Sign out
+              </button>
             </div>
           </div>
 
