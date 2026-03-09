@@ -4,6 +4,7 @@ import io
 import os
 import time
 from dataclasses import dataclass
+from uuid import uuid4
 
 import httpx
 from pydicom.dataset import FileDataset, FileMetaDataset
@@ -90,6 +91,15 @@ def build_instance(study: SeedStudy) -> bytes:
     return buffer.getvalue()
 
 
+def build_multipart_related(payload: bytes, content_type: str = "application/dicom") -> tuple[str, bytes]:
+    boundary = f"radsysx-seed-{uuid4().hex}"
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode("ascii") + payload + f"\r\n--{boundary}--\r\n".encode("ascii")
+    return boundary, body
+
+
 def main() -> None:
     orthanc_url = os.getenv(
         "RADSYSX_ORTHANC_DICOMWEB_URL",
@@ -120,10 +130,13 @@ def main() -> None:
                 continue
 
             payload = build_instance(study)
+            boundary, body = build_multipart_related(payload)
             store = client.post(
                 "/studies",
-                content=payload,
-                headers={"Content-Type": "application/dicom"},
+                content=body,
+                headers={
+                    "Content-Type": f'multipart/related; type="application/dicom"; boundary={boundary}'
+                },
             )
             store.raise_for_status()
             print(f"Seeded sample study {index} ({study.modality})")

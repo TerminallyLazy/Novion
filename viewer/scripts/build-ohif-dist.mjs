@@ -34,6 +34,7 @@ patchRuntimePublicPath();
 patchCssAssetUrls();
 patchManifest();
 patchServiceWorkerInit();
+patchServiceWorkerPrecacheUrls();
 
 function copyViewerAsset(fileName) {
   fs.copyFileSync(
@@ -150,8 +151,31 @@ function patchRuntimePublicPath() {
     .filter((fileName) => fileName.endsWith(".js"))
     .map((fileName) => path.join(distRoot, fileName));
   const current = '__webpack_require__.p = "/";';
-  const next =
-    '__webpack_require__.p = ((typeof self !== "undefined" && (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL)) || (typeof window !== "undefined" && (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL)) || "/");';
+  const next = `__webpack_require__.p = ((function resolveRadSysXPublicUrl() {
+  const explicit =
+    (typeof self !== "undefined" && (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL)) ||
+    (typeof window !== "undefined" && (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL));
+  if (explicit) {
+    return explicit;
+  }
+
+  const locationHref =
+    (typeof self !== "undefined" && self.location && self.location.href) ||
+    (typeof window !== "undefined" && window.location && window.location.href) ||
+    "";
+  if (!locationHref) {
+    return "/";
+  }
+
+  try {
+    const url = new URL(locationHref);
+    const pathname = url.pathname || "/";
+    const basePath = pathname.endsWith("/") ? pathname : pathname.replace(/[^/]*$/, "");
+    return basePath || "/";
+  } catch {
+    return "/";
+  }
+})());`;
   let patchedCount = 0;
 
   for (const bundlePath of bundlePaths) {
@@ -221,5 +245,21 @@ function patchServiceWorkerInit() {
 
   if (source.includes(current)) {
     fs.writeFileSync(initPath, source.replace(current, next), "utf8");
+  }
+}
+
+function patchServiceWorkerPrecacheUrls() {
+  const serviceWorkerPath = path.join(distRoot, "sw.js");
+  if (!fs.existsSync(serviceWorkerPath)) {
+    return;
+  }
+
+  const source = fs.readFileSync(serviceWorkerPath, "utf8");
+  const normalized = source
+    .replace(/('url':')\//g, "$1")
+    .replace(/("url":")\//g, "$1");
+
+  if (normalized !== source) {
+    fs.writeFileSync(serviceWorkerPath, normalized, "utf8");
   }
 }

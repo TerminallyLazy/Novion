@@ -135,10 +135,10 @@
       return;
     }
 
-    dicomwebSource.configuration.qidoRoot = runtime.qidoRoot;
-    dicomwebSource.configuration.wadoRoot = runtime.wadoRoot;
-    dicomwebSource.configuration.wadoUriRoot = runtime.wadoUriRoot;
-    dicomwebSource.configuration.stowRoot = runtime.stowRoot;
+    dicomwebSource.configuration.qidoRoot = normalizeSameOriginUrl(runtime.qidoRoot);
+    dicomwebSource.configuration.wadoRoot = normalizeSameOriginUrl(runtime.wadoRoot);
+    dicomwebSource.configuration.wadoUriRoot = normalizeSameOriginUrl(runtime.wadoUriRoot);
+    dicomwebSource.configuration.stowRoot = normalizeSameOriginUrl(runtime.stowRoot);
   }
 
   function persistLaunchToken(token) {
@@ -180,6 +180,19 @@
 
     const normalized = trimmed.replace(/\/+$/, "");
     return normalized || "/";
+  }
+
+  function normalizeSameOriginUrl(value) {
+    if (!value) {
+      return value;
+    }
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+    if (value.startsWith("/")) {
+      return `${window.location.origin}${value}`;
+    }
+    return value;
   }
 
   async function ensureLoader() {
