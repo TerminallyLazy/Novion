@@ -13,7 +13,6 @@ backend/.venv/*
 .env.local
 *.pyc
 *.db
-*.png
 *.dcm
 */node_modules/*
 frontend/package-lock.json
