@@ -148,8 +148,10 @@ function patchIndexHtml() {
   let html = fs.readFileSync(indexPath, "utf8");
   const publicUrlBootstrap = [
     "window.__RADSYSX_VIEWER_BASE_PATH__ = (function resolveViewerBasePath() {",
-    "  const pathname = window.location.pathname || '/';",
-    "  const normalized = pathname.replace(/\\/+$/, '');",
+    "  const pathname = String((window.location && window.location.pathname) || '/');",
+    "  const safePath = ('/' + pathname.replace(/^\\/+/, '')).replace(/\\/+$/, '');",
+    "  const basePath = /\\/[^/]+\\.[^/]+$/.test(safePath) ? safePath.replace(/\\/[^/]+$/, '') : safePath;",
+    "  const normalized = basePath || '/';",
     "  return normalized || '/';",
     "})();",
     "window.__RADSYSX_PUBLIC_URL__ =",
@@ -184,47 +186,92 @@ function patchRuntimePublicPath() {
   const bundlePaths = fs
     .readdirSync(distRoot)
     .filter((fileName) => fileName.endsWith(".js"))
+    .filter(
+      (fileName) =>
+        ![
+          "app-config.js",
+          "init-service-worker.js",
+          "react.production.min.js",
+          "radsysx-bootstrap.js",
+          "radsysx-ohif-extension.js",
+          "radsysx-ohif-mode.js",
+          "sw.js",
+        ].includes(fileName),
+    )
     .map((fileName) => path.join(distRoot, fileName));
-  const current = '__webpack_require__.p = "/";';
+  const current = /__webpack_require__\.p\s*=\s*["']\/["'];/g;
   const next = `__webpack_require__.p = ((function resolveRadSysXPublicUrl() {
+  function normalizePublicUrl(value) {
+    if (!value) {
+      return null;
+    }
+
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (/^[a-z]+:/i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        const currentOrigin =
+          (typeof self !== "undefined" && self.location && self.location.origin) ||
+          (typeof window !== "undefined" && window.location && window.location.origin) ||
+          parsed.origin;
+        if (parsed.origin !== currentOrigin) {
+          return null;
+        }
+        return normalizePublicUrl(parsed.pathname);
+      } catch {
+        return null;
+      }
+    }
+
+    if (!trimmed.startsWith("/")) {
+      return null;
+    }
+
+    const normalized = ("/" + trimmed.replace(/^\\/+/, "")).replace(/\\/+$/, "");
+    const basePath = /\\/[^/]+\\.[^/]+$/.test(normalized)
+      ? normalized.replace(/\\/[^/]+$/, "")
+      : normalized;
+    return basePath === "/" ? "/" : basePath + "/";
+  }
+
   const explicit =
-    (typeof self !== "undefined" && (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL)) ||
-    (typeof window !== "undefined" && (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL));
-  if (explicit) {
-    return explicit;
+    (typeof self !== "undefined" &&
+      (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL || self.__RADSYSX_VIEWER_BASE_PATH__)) ||
+    (typeof window !== "undefined" &&
+      (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || window.__RADSYSX_VIEWER_BASE_PATH__));
+  const normalizedExplicit = normalizePublicUrl(explicit);
+  if (normalizedExplicit) {
+    return normalizedExplicit;
   }
 
-  const locationHref =
-    (typeof self !== "undefined" && self.location && self.location.href) ||
-    (typeof window !== "undefined" && window.location && window.location.href) ||
+  const locationPathname =
+    (typeof self !== "undefined" && self.location && self.location.pathname) ||
+    (typeof window !== "undefined" && window.location && window.location.pathname) ||
     "";
-  if (!locationHref) {
-    return "/";
-  }
-
-  try {
-    const url = new URL(locationHref);
-    const pathname = url.pathname || "/";
-    const basePath = pathname.endsWith("/") ? pathname : pathname.replace(/[^/]*$/, "");
-    return basePath || "/";
-  } catch {
-    return "/";
-  }
+  const normalizedPathname = normalizePublicUrl(locationPathname);
+  return normalizedPathname || "/";
 })());`;
   let patchedCount = 0;
 
   for (const bundlePath of bundlePaths) {
     const bundle = fs.readFileSync(bundlePath, "utf8");
-    if (!bundle.includes(current)) {
+    const updated = bundle.replace(current, next);
+    if (updated === bundle) {
       continue;
     }
 
-    fs.writeFileSync(bundlePath, bundle.replaceAll(current, next), "utf8");
+    fs.writeFileSync(bundlePath, updated, "utf8");
     patchedCount += 1;
   }
 
   if (patchedCount === 0) {
-    throw new Error("Unable to patch OHIF runtime public path in copied dist bundles.");
+    throw new Error(
+      `Unable to patch OHIF runtime public path in copied dist bundles. Checked ${bundlePaths.length} bundles for the webpack public-path assignment.`,
+    );
   }
 }
 

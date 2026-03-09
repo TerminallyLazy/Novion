@@ -536,7 +536,11 @@
       normalizeSameOriginUrl(viewerRuntime.wadoRoot) ||
       configuration.wadoUriRoot ||
       configuration.wadoRoot;
-    configuration.stowRoot = normalizeSameOriginUrl(viewerRuntime.stowRoot) || configuration.stowRoot;
+    if (viewerRuntime.featureFlags?.directStow && viewerRuntime.stowRoot) {
+      configuration.stowRoot = normalizeSameOriginUrl(viewerRuntime.stowRoot) || configuration.stowRoot;
+    } else {
+      delete configuration.stowRoot;
+    }
     return configuration;
   }
 
@@ -549,15 +553,7 @@
   }
 
   function normalizeSameOriginUrl(value) {
-    if (!value) {
-      return value;
-    }
-    if (/^https?:\/\//i.test(value)) {
-      return value;
-    }
-    if (value.startsWith("/")) {
-      return `${window.location.origin}${value}`;
-    }
-    return value;
+    const normalize = window.__RADSYSX_NORMALIZE_SAME_ORIGIN_URL__;
+    return typeof normalize === "function" ? normalize(value) : value;
   }
 })();

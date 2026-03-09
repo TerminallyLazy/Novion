@@ -12,6 +12,7 @@
   const initialViewerBasePath = normalizeViewerBasePath(window.location.pathname) ?? "/";
 
   window.__RADSYSX_VIEWER_BASE_PATH__ = initialViewerBasePath;
+  window.__RADSYSX_NORMALIZE_SAME_ORIGIN_URL__ = normalizeSameOriginUrl;
 
   window.__RADSYSX_BOOTSTRAP_PROMISE__ = bootstrap();
 
@@ -138,7 +139,11 @@
     dicomwebSource.configuration.qidoRoot = normalizeSameOriginUrl(runtime.qidoRoot);
     dicomwebSource.configuration.wadoRoot = normalizeSameOriginUrl(runtime.wadoRoot);
     dicomwebSource.configuration.wadoUriRoot = normalizeSameOriginUrl(runtime.wadoUriRoot);
-    dicomwebSource.configuration.stowRoot = normalizeSameOriginUrl(runtime.stowRoot);
+    if (runtime.featureFlags?.directStow && runtime.stowRoot) {
+      dicomwebSource.configuration.stowRoot = normalizeSameOriginUrl(runtime.stowRoot);
+    } else {
+      delete dicomwebSource.configuration.stowRoot;
+    }
   }
 
   function persistLaunchToken(token) {
@@ -178,7 +183,7 @@
       return null;
     }
 
-    const normalized = trimmed.replace(/\/+$/, "");
+    const normalized = `/${trimmed.replace(/^\/+/, "")}`.replace(/\/+$/, "");
     return normalized || "/";
   }
 

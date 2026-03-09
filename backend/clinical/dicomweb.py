@@ -19,6 +19,16 @@ from .contracts import (
     StudySearchPage,
 )
 
+ALLOWED_STOW_CONTENT_TYPES = {"application/dicom"}
+
+
+def normalize_dicom_stow_content_type(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in ALLOWED_STOW_CONTENT_TYPES:
+        return normalized
+    supported = ", ".join(sorted(ALLOWED_STOW_CONTENT_TYPES))
+    raise ValueError(f"Unsupported DICOM STOW contentType '{value}'. Supported values: {supported}.")
+
 
 class DICOMwebAdapter(Protocol):
     async def search_studies(self, query: StudyQuery) -> StudySearchPage: ...
@@ -182,11 +192,12 @@ class OrthancDICOMwebAdapter:
                 warnings=warnings,
             )
 
+        content_type = normalize_dicom_stow_content_type(request.content_type)
         boundary = f"radsysx-{uuid4().hex}"
         headers = {
-            "Content-Type": f'multipart/related; type="{request.content_type}"; boundary={boundary}'
+            "Content-Type": f'multipart/related; type="{content_type}"; boundary={boundary}'
         }
-        content = self._build_multipart_related_stream(boundary, files, request.content_type)
+        content = self._build_multipart_related_stream(boundary, files, content_type)
 
         async with self._client() as client:
             response = await client.post("/studies", headers=headers, content=content)
