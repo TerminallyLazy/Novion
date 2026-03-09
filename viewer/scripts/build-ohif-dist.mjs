@@ -27,6 +27,7 @@ copyViewerAsset("radsysx-bootstrap.js");
 copyViewerAsset("radsysx-ohif-extension.js");
 copyViewerAsset("radsysx-ohif-mode.js");
 copyViewerAsset("radsysx-viewer.css");
+copyWorkspaceFile(["RadSysX-Logo.png"], "radsysx-logo.png");
 copyWorkspaceAsset(["react", "umd", "react.production.min.js"], "react.production.min.js");
 writeAppConfig();
 patchIndexHtml();
@@ -45,6 +46,14 @@ function copyViewerAsset(fileName) {
 
 function copyWorkspaceAsset(relativeParts, outputName) {
   const assetPath = path.join(workspaceRoot, "node_modules", ...relativeParts);
+  if (!fs.existsSync(assetPath)) {
+    throw new Error(`Required viewer asset was not found: ${assetPath}`);
+  }
+  fs.copyFileSync(assetPath, path.join(distRoot, outputName));
+}
+
+function copyWorkspaceFile(relativeParts, outputName) {
+  const assetPath = path.join(workspaceRoot, ...relativeParts);
   if (!fs.existsSync(assetPath)) {
     throw new Error(`Required viewer asset was not found: ${assetPath}`);
   }
@@ -71,6 +80,32 @@ function writeAppConfig() {
       window.__RADSYSX_OHIF_MODE__,
     ],
     customizationService: {},
+    whiteLabeling: {
+      createLogoComponentFn: function createLogoComponentFn(React) {
+        return React.createElement(
+          "a",
+          {
+            href: window.__RADSYSX_VIEWER_BASE_PATH__ ?? "/",
+            target: "_self",
+            rel: "noopener noreferrer",
+            style: {
+              display: "flex",
+              alignItems: "center",
+            },
+          },
+          React.createElement("img", {
+            src: (window.__RADSYSX_PUBLIC_URL__ || "./") + "radsysx-logo.png",
+            alt: "RadSysX",
+            style: {
+              display: "block",
+              height: "72px",
+              width: "auto",
+              maxWidth: "none",
+            },
+          }),
+        );
+      },
+    },
     showStudyList: false,
     maxNumberOfWebWorkers: 3,
     showWarningMessageForCrossOrigin: true,
