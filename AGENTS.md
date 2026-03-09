@@ -91,7 +91,7 @@ Clinical workflow is now:
 1. Establish a clinical session via `POST /api/auth/local-login` and confirm it with `GET /api/auth/session`.
 2. Open `/worklist` in the Next.js shell.
 3. Create an opaque launch session via `POST /api/imaging/launch`.
-4. Resolve that session in `/viewer?launch=...` via `GET /api/imaging/launch/resolve`.
+4. Resolve that session in `/viewer/?launch=...` via `GET /api/imaging/launch/resolve`.
 5. Let the dedicated OHIF viewer app bind to the returned `viewerRuntime` and same-origin DICOMweb roots.
 6. Load study workspace state via `GET /api/studies/{studyUid}/workspace`.
 7. Persist reports, AI jobs, derived results, and audit events through backend contracts, including backend-mediated STOW via `POST /api/derived-results/stow`.

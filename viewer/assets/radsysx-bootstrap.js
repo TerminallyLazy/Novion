@@ -110,6 +110,7 @@
   function stripSensitiveQuery() {
     const cleanParams = new URLSearchParams(window.location.search);
     cleanParams.delete("launch");
+    cleanParams.delete("_rsc");
     cleanParams.delete("StudyInstanceUIDs");
     cleanParams.delete("studyInstanceUIDs");
     cleanParams.delete("SeriesInstanceUIDs");

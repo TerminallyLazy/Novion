@@ -151,7 +151,7 @@ function patchRuntimePublicPath() {
     .map((fileName) => path.join(distRoot, fileName));
   const current = '__webpack_require__.p = "/";';
   const next =
-    '__webpack_require__.p = self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL || window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || "/";';
+    '__webpack_require__.p = ((typeof self !== "undefined" && (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL)) || (typeof window !== "undefined" && (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL)) || "/");';
   let patchedCount = 0;
 
   for (const bundlePath of bundlePaths) {

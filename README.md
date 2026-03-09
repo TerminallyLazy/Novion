@@ -50,7 +50,7 @@ Those capabilities remain part of RadSysX, but they are not the clinical source 
 2. `GET /api/auth/session`
 3. Open `/worklist`
 4. `POST /api/imaging/launch`
-5. Open `/viewer?launch=...`
+5. Open `/viewer/?launch=...`
 6. `GET /api/imaging/launch/resolve`
 7. OHIF binds to the returned runtime and same-origin DICOMweb roots
 8. `GET /api/studies/{studyUid}/workspace`
