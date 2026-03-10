@@ -27,9 +27,15 @@ copyViewerAsset("radsysx-bootstrap.js");
 copyViewerAsset("radsysx-ohif-extension.js");
 copyViewerAsset("radsysx-ohif-mode.js");
 copyViewerAsset("radsysx-viewer.css");
+copyWorkspaceFile(["RadSysX-Logo.png"], "radsysx-logo.png");
 copyWorkspaceAsset(["react", "umd", "react.production.min.js"], "react.production.min.js");
 writeAppConfig();
 patchIndexHtml();
+patchRuntimePublicPath();
+patchCssAssetUrls();
+patchManifest();
+patchServiceWorkerInit();
+patchServiceWorkerPrecacheUrls();
 
 function copyViewerAsset(fileName) {
   fs.copyFileSync(
@@ -40,6 +46,14 @@ function copyViewerAsset(fileName) {
 
 function copyWorkspaceAsset(relativeParts, outputName) {
   const assetPath = path.join(workspaceRoot, "node_modules", ...relativeParts);
+  if (!fs.existsSync(assetPath)) {
+    throw new Error(`Required viewer asset was not found: ${assetPath}`);
+  }
+  fs.copyFileSync(assetPath, path.join(distRoot, outputName));
+}
+
+function copyWorkspaceFile(relativeParts, outputName) {
+  const assetPath = path.join(workspaceRoot, ...relativeParts);
   if (!fs.existsSync(assetPath)) {
     throw new Error(`Required viewer asset was not found: ${assetPath}`);
   }
@@ -66,6 +80,32 @@ function writeAppConfig() {
       window.__RADSYSX_OHIF_MODE__,
     ],
     customizationService: {},
+    whiteLabeling: {
+      createLogoComponentFn: function createLogoComponentFn(React) {
+        return React.createElement(
+          "a",
+          {
+            href: window.__RADSYSX_VIEWER_BASE_PATH__ ?? "/",
+            target: "_self",
+            rel: "noopener noreferrer",
+            style: {
+              display: "flex",
+              alignItems: "center",
+            },
+          },
+          React.createElement("img", {
+            src: (window.__RADSYSX_PUBLIC_URL__ || "./") + "radsysx-logo.png",
+            alt: "RadSysX",
+            style: {
+              display: "block",
+              height: "72px",
+              width: "auto",
+              maxWidth: "none",
+            },
+          }),
+        );
+      },
+    },
     showStudyList: false,
     maxNumberOfWebWorkers: 3,
     showWarningMessageForCrossOrigin: true,
@@ -108,8 +148,10 @@ function patchIndexHtml() {
   let html = fs.readFileSync(indexPath, "utf8");
   const publicUrlBootstrap = [
     "window.__RADSYSX_VIEWER_BASE_PATH__ = (function resolveViewerBasePath() {",
-    "  const pathname = window.location.pathname || '/';",
-    "  const normalized = pathname.replace(/\\/+$/, '');",
+    "  const pathname = String((window.location && window.location.pathname) || '/');",
+    "  const safePath = ('/' + pathname.replace(/^\\/+/, '')).replace(/\\/+$/, '');",
+    "  const basePath = /\\/[^/]+\\.[^/]+$/.test(safePath) ? safePath.replace(/\\/[^/]+$/, '') : safePath;",
+    "  const normalized = basePath || '/';",
     "  return normalized || '/';",
     "})();",
     "window.__RADSYSX_PUBLIC_URL__ =",
@@ -138,4 +180,168 @@ function patchIndexHtml() {
   );
 
   fs.writeFileSync(indexPath, html, "utf8");
+}
+
+function patchRuntimePublicPath() {
+  const bundlePaths = fs
+    .readdirSync(distRoot)
+    .filter((fileName) => fileName.endsWith(".js"))
+    .filter(
+      (fileName) =>
+        ![
+          "app-config.js",
+          "init-service-worker.js",
+          "react.production.min.js",
+          "radsysx-bootstrap.js",
+          "radsysx-ohif-extension.js",
+          "radsysx-ohif-mode.js",
+          "sw.js",
+        ].includes(fileName),
+    )
+    .map((fileName) => path.join(distRoot, fileName));
+  const current = /__webpack_require__\.p\s*=\s*["']\/["'];/g;
+  const next = `__webpack_require__.p = ((function resolveRadSysXPublicUrl() {
+  function normalizePublicUrl(value) {
+    if (!value) {
+      return null;
+    }
+
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (/^[a-z]+:/i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        const currentOrigin =
+          (typeof self !== "undefined" && self.location && self.location.origin) ||
+          (typeof window !== "undefined" && window.location && window.location.origin) ||
+          parsed.origin;
+        if (parsed.origin !== currentOrigin) {
+          return null;
+        }
+        return normalizePublicUrl(parsed.pathname);
+      } catch {
+        return null;
+      }
+    }
+
+    if (!trimmed.startsWith("/")) {
+      return null;
+    }
+
+    const normalized = ("/" + trimmed.replace(/^\\/+/, "")).replace(/\\/+$/, "");
+    const basePath = /\\/[^/]+\\.[^/]+$/.test(normalized)
+      ? normalized.replace(/\\/[^/]+$/, "")
+      : normalized;
+    return basePath === "/" ? "/" : basePath + "/";
+  }
+
+  const explicit =
+    (typeof self !== "undefined" &&
+      (self.__RADSYSX_PUBLIC_URL__ || self.PUBLIC_URL || self.__RADSYSX_VIEWER_BASE_PATH__)) ||
+    (typeof window !== "undefined" &&
+      (window.__RADSYSX_PUBLIC_URL__ || window.PUBLIC_URL || window.__RADSYSX_VIEWER_BASE_PATH__));
+  const normalizedExplicit = normalizePublicUrl(explicit);
+  if (normalizedExplicit) {
+    return normalizedExplicit;
+  }
+
+  const locationPathname =
+    (typeof self !== "undefined" && self.location && self.location.pathname) ||
+    (typeof window !== "undefined" && window.location && window.location.pathname) ||
+    "";
+  const normalizedPathname = normalizePublicUrl(locationPathname);
+  return normalizedPathname || "/";
+})());`;
+  let patchedCount = 0;
+
+  for (const bundlePath of bundlePaths) {
+    const bundle = fs.readFileSync(bundlePath, "utf8");
+    const updated = bundle.replace(current, next);
+    if (updated === bundle) {
+      continue;
+    }
+
+    fs.writeFileSync(bundlePath, updated, "utf8");
+    patchedCount += 1;
+  }
+
+  if (patchedCount === 0) {
+    throw new Error(
+      `Unable to patch OHIF runtime public path in copied dist bundles. Checked ${bundlePaths.length} bundles for the webpack public-path assignment.`,
+    );
+  }
+}
+
+function patchCssAssetUrls() {
+  const cssPaths = fs
+    .readdirSync(distRoot)
+    .filter((fileName) => fileName.endsWith(".css"))
+    .map((fileName) => path.join(distRoot, fileName));
+
+  for (const cssPath of cssPaths) {
+    const css = fs.readFileSync(cssPath, "utf8");
+    const normalized = css.replace(/url\((['"]?)\//g, "url($1");
+    if (normalized !== css) {
+      fs.writeFileSync(cssPath, normalized, "utf8");
+    }
+  }
+}
+
+function patchManifest() {
+  const manifestPath = path.join(distRoot, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    return;
+  }
+
+  const manifest = fs.readFileSync(manifestPath, "utf8");
+  const normalized = manifest.replace(/"src": "\/assets\//g, '"src": "assets/');
+  if (normalized !== manifest) {
+    fs.writeFileSync(manifestPath, normalized, "utf8");
+  }
+}
+
+function patchServiceWorkerInit() {
+  const initPath = path.join(distRoot, "init-service-worker.js");
+  if (!fs.existsSync(initPath)) {
+    return;
+  }
+
+  const source = fs.readFileSync(initPath, "utf8");
+  const current = `navigator.serviceWorker.getRegistrations().then(function (registrations) {
+  for (let registration of registrations) {
+    registration.unregister();
+  }
+});
+`;
+  const next = `if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function (registrations) {
+    for (let registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+`;
+
+  if (source.includes(current)) {
+    fs.writeFileSync(initPath, source.replace(current, next), "utf8");
+  }
+}
+
+function patchServiceWorkerPrecacheUrls() {
+  const serviceWorkerPath = path.join(distRoot, "sw.js");
+  if (!fs.existsSync(serviceWorkerPath)) {
+    return;
+  }
+
+  const source = fs.readFileSync(serviceWorkerPath, "utf8");
+  const normalized = source
+    .replace(/('url':')\//g, "$1")
+    .replace(/("url":")\//g, "$1");
+
+  if (normalized !== source) {
+    fs.writeFileSync(serviceWorkerPath, normalized, "utf8");
+  }
 }

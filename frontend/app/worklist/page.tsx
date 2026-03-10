@@ -67,7 +67,7 @@ export default function WorklistPage() {
       const launch = await clinicalApi.launchImaging({
         studyInstanceUID: row.studyInstanceUID,
       });
-      router.push(launch.viewerUrl);
+      window.location.assign(launch.viewerUrl);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to launch viewer.");
     } finally {

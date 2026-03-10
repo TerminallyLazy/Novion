@@ -8,10 +8,11 @@ frontend/dist/*
 viewer/dist/*
 frontend/lib/api/.venv/*
 backend/.venv/*
+*/.venv/*
+.venv/
 .env.local
 *.pyc
 *.db
-*.png
 *.dcm
 */node_modules/*
 frontend/package-lock.json

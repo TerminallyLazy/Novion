@@ -21,7 +21,7 @@ Rules:
 
 - Do not assume WSL, Windows path translation, Docker Desktop integration, `fnm`, or any Windows-only shell behavior.
 - Do not rely on machine-specific temporary dependency paths, ad hoc `PYTHONPATH` overrides, or globally preinstalled packages that are not documented.
-- Prefer a repo-local Python virtual environment in `.venv` and the workspace `package.json` / lockfile state for Node dependencies.
+- Prefer a repo-local Python virtual environment in `.venv` and the workspace `package.json` plus the root `package-lock.json` for Node dependencies.
 - Treat Docker Engine + Compose on Linux as the reference container runtime, not Docker Desktop-specific behavior.
 - On a fresh Linux host, first do a quick repo/context recon, then stop and wait for the user's report about what happened during the first Linux app test pass before making deeper code changes.
 
@@ -30,8 +30,11 @@ For future Linux bring-up, prefer this bootstrap sequence:
 - `python3 -m venv .venv`
 - `. .venv/bin/activate`
 - `python3 -m pip install --upgrade pip`
-- `python3 -m pip install -r backend/requirements.txt`
+- `python3 -m pip install -r backend/requirements-clinical.txt`
 - `npm install --legacy-peer-deps`
+
+`backend/requirements.txt` remains the broader research/agent dependency set. Use it only when you intentionally need the research surface and its extra dependencies.
+If you need one interpreter that can install both the clinical and broader research dependency sets, use Python `3.12`.
 
 If the host is missing a required system dependency, surface that explicitly instead of patching around it with host-local hacks.
 
@@ -88,7 +91,7 @@ Clinical workflow is now:
 1. Establish a clinical session via `POST /api/auth/local-login` and confirm it with `GET /api/auth/session`.
 2. Open `/worklist` in the Next.js shell.
 3. Create an opaque launch session via `POST /api/imaging/launch`.
-4. Resolve that session in `/viewer?launch=...` via `GET /api/imaging/launch/resolve`.
+4. Resolve that session in `/viewer/?launch=...` via `GET /api/imaging/launch/resolve`.
 5. Let the dedicated OHIF viewer app bind to the returned `viewerRuntime` and same-origin DICOMweb roots.
 6. Load study workspace state via `GET /api/studies/{studyUid}/workspace`.
 7. Persist reports, AI jobs, derived results, and audit events through backend contracts, including backend-mediated STOW via `POST /api/derived-results/stow`.
@@ -265,13 +268,19 @@ If Docker Engine and Compose are available on the Linux host, also validate the 
 - `python3 -m venv .venv`
 - `. .venv/bin/activate`
 - `python3 -m pip install --upgrade pip`
-- `python3 -m pip install -r backend/requirements.txt`
+- `python3 -m pip install -r backend/requirements-clinical.txt`
 - `npm install --legacy-peer-deps`
 
 ### Backend
 
 - `. .venv/bin/activate && python3 backend/server.py`
 - `. .venv/bin/activate && python3 -m pytest backend/tests/test_clinical_platform.py`
+
+### Whole Backend Runtime
+
+- Use Python `3.12` if the environment needs both `backend/requirements-clinical.txt` and `backend/requirements.txt`.
+- `. .venv/bin/activate && python3 -m pip install -r backend/requirements.txt`
+- `. .venv/bin/activate && RADSYSX_APP_MODE=research python3 backend/server.py`
 
 ### Frontend / Workspace
 
@@ -282,14 +291,18 @@ If Docker Engine and Compose are available on the Linux host, also validate the 
 - `npm run type-check --workspace viewer`
 - `npm run build --workspace viewer`
 
+Use the workspace script for the frontend dev server; it is the supported local start path for the monorepo shell.
+
 ### Local Clinical Stack
 
 - `export RADSYSX_ORTHANC_USERNAME=local-user`
 - `export RADSYSX_ORTHANC_PASSWORD=local-pass`
 - `docker compose up --build`
+- This stack validates the governed clinical surface only; it is not the full research+clinical runtime.
 - clinical public origin: `http://localhost:3000`
+- do not validate the governed viewer flow by opening the raw viewer dev server on port `3001`; use the nginx-served `http://localhost:3000` origin instead
 - Next.js shell: `/`
-- OHIF viewer: `/viewer`
+- OHIF viewer: `/viewer/`
 - FastAPI: `/api`
 - Orthanc DICOMweb: `/dicom-web`
 

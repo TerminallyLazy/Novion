@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
-BACKEND_VENV="$BACKEND_DIR/.venv"
+BACKEND_VENV="$ROOT_DIR/.venv"
 ENV_FILE="$ROOT_DIR/.env.local"
 
 # Colors
@@ -44,7 +44,7 @@ trap cleanup SIGINT SIGTERM
 check_backend() {
     if [ ! -d "$BACKEND_VENV" ]; then
         echo -e "${RED}Backend venv not found at $BACKEND_VENV${NC}"
-        echo "Create it with: cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
+        echo "Create it with: python3 -m venv .venv && . .venv/bin/activate && python3 -m pip install -r backend/requirements-clinical.txt"
         return 1
     fi
 }
@@ -52,7 +52,7 @@ check_backend() {
 check_frontend() {
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
         echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-        (cd "$FRONTEND_DIR" && npm install)
+        (cd "$ROOT_DIR" && npm install --legacy-peer-deps)
     fi
 }
 
@@ -71,7 +71,7 @@ start_backend() {
 
     (
         cd "$BACKEND_DIR"
-        source .venv/bin/activate
+        source "$BACKEND_VENV/bin/activate"
         # Export env vars from .env.local so they're available to the process
         if [ -f "$ENV_FILE" ]; then
             set -a

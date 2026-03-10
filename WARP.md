@@ -22,10 +22,12 @@ Do not treat them as equivalent.
 
 ## Commands
 
+Use Python `3.12` if you need both the governed clinical install and the broader research/backend install in one environment.
+
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install -r backend/requirements.txt
+python3 -m pip install -r backend/requirements-clinical.txt
 npm install --legacy-peer-deps
 python3 -m compileall backend/clinical backend/server.py backend/radsysx.py
 python3 -m pytest backend/tests/test_clinical_platform.py
@@ -33,6 +35,8 @@ npm run type-check --workspace frontend
 npm run type-check --workspace viewer
 npm run build --workspace viewer
 ```
+
+Install Node dependencies from the repo root so the workspace-managed root `package-lock.json` is the only active lockfile.
 
 After initial recon on the Linux host, wait for the user's first app test report before widening the code-change scope.
 
@@ -42,6 +46,14 @@ Local compose stack:
 export RADSYSX_ORTHANC_USERNAME=local-user
 export RADSYSX_ORTHANC_PASSWORD=local-pass
 docker compose up --build
+```
+
+Full backend/runtime install on the same host:
+
+```bash
+. .venv/bin/activate
+python3 -m pip install -r backend/requirements.txt
+RADSYSX_APP_MODE=research python3 backend/server.py
 ```
 
 ## Guardrails

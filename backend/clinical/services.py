@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 from datetime import timedelta
-from urllib.parse import quote
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -85,7 +85,7 @@ class ClinicalPlatformService:
             actor_role=actor.primary_role,
             signature=signature,
         )
-        viewer_url = f"{self._settings.viewer_base_url}?launch={quote(launch_token, safe='')}"
+        viewer_url = self._build_viewer_launch_url(launch_token)
 
         self._repository.add_audit_event(
             self._build_audit_event(
@@ -331,6 +331,7 @@ class ClinicalPlatformService:
         return f"{root}/studies/{study_uid}"
 
     def _viewer_runtime(self, context: ImagingLaunchContext) -> ViewerRuntime:
+        direct_stow_enabled = False
         return ViewerRuntime(
             viewer_kind=self._settings.viewer_kind,
             viewer_base_path=self._settings.viewer_base_path,
@@ -339,7 +340,7 @@ class ClinicalPlatformService:
             qido_root=self._settings.dicomweb_qido_root,
             wado_root=self._settings.dicomweb_wado_root,
             wado_uri_root=self._settings.dicomweb_wado_uri_root,
-            stow_root=self._settings.dicomweb_stow_root,
+            stow_root=self._settings.dicomweb_stow_root if direct_stow_enabled else "",
             auth_mode=self._settings.auth_mode,
             feature_flags=ViewerFeatureFlags(
                 local_file_import=False,
@@ -347,8 +348,25 @@ class ClinicalPlatformService:
                 ai_panel=True,
                 derived_panel=True,
                 audit_panel=True,
-                direct_stow=False,
+                direct_stow=direct_stow_enabled,
             ),
+        )
+
+    def _build_viewer_launch_url(self, launch_token: str) -> str:
+        split = urlsplit(self._settings.viewer_base_url.strip())
+        path = split.path or "/"
+        normalized_path = path if path.endswith("/") else f"{path}/"
+        query_pairs = [(key, value) for key, value in parse_qsl(split.query, keep_blank_values=True) if key != "launch"]
+        query_pairs.append(("launch", launch_token))
+        query = urlencode(query_pairs, doseq=True)
+        return urlunsplit(
+            (
+                split.scheme,
+                split.netloc,
+                normalized_path,
+                query,
+                split.fragment,
+            )
         )
 
     def _sign_context(self, context: ImagingLaunchContext) -> str:

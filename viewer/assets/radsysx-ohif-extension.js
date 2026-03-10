@@ -407,12 +407,12 @@
             if (originalGetStudyInstanceUIDs) {
               dataSource.getStudyInstanceUIDs = function getStudyInstanceUIDs(initArgs) {
                 const studyInstanceUIDs = originalGetStudyInstanceUIDs(initArgs);
-                if (studyInstanceUIDs?.filter(Boolean).length) {
-                  return studyInstanceUIDs;
-                }
-
                 const launchStudyUid = getLaunchContext()?.studyInstanceUID;
-                return launchStudyUid ? [launchStudyUid] : studyInstanceUIDs;
+                return studyInstanceUIDs?.filter(Boolean).length
+                  ? studyInstanceUIDs
+                  : launchStudyUid
+                    ? [launchStudyUid]
+                    : studyInstanceUIDs;
               };
             }
 
@@ -529,14 +529,18 @@
       return configuration;
     }
 
-    configuration.qidoRoot = viewerRuntime.qidoRoot || configuration.qidoRoot;
-    configuration.wadoRoot = viewerRuntime.wadoRoot || configuration.wadoRoot;
+    configuration.qidoRoot = normalizeSameOriginUrl(viewerRuntime.qidoRoot) || configuration.qidoRoot;
+    configuration.wadoRoot = normalizeSameOriginUrl(viewerRuntime.wadoRoot) || configuration.wadoRoot;
     configuration.wadoUriRoot =
-      viewerRuntime.wadoUriRoot ||
-      viewerRuntime.wadoRoot ||
+      normalizeSameOriginUrl(viewerRuntime.wadoUriRoot) ||
+      normalizeSameOriginUrl(viewerRuntime.wadoRoot) ||
       configuration.wadoUriRoot ||
       configuration.wadoRoot;
-    configuration.stowRoot = viewerRuntime.stowRoot || configuration.stowRoot;
+    if (viewerRuntime.featureFlags?.directStow && viewerRuntime.stowRoot) {
+      configuration.stowRoot = normalizeSameOriginUrl(viewerRuntime.stowRoot) || configuration.stowRoot;
+    } else {
+      delete configuration.stowRoot;
+    }
     return configuration;
   }
 
@@ -546,5 +550,10 @@
 
   function getLaunchContext() {
     return window.__RADSYSX_LAUNCH__?.context ?? null;
+  }
+
+  function normalizeSameOriginUrl(value) {
+    const normalize = window.__RADSYSX_NORMALIZE_SAME_ORIGIN_URL__;
+    return typeof normalize === "function" ? normalize(value) : value;
   }
 })();

@@ -6,12 +6,13 @@
 (async function radsysxBootstrap() {
   const LAUNCH_STORAGE_KEY = "radsysx.clinical.launchToken";
   const REQUEST_TIMEOUT_MS = 10000;
-  const loader = ensureLoader();
+  const loader = await ensureLoader();
   const params = new URLSearchParams(window.location.search);
   const launchFromUrl = params.get("launch");
   const initialViewerBasePath = normalizeViewerBasePath(window.location.pathname) ?? "/";
 
   window.__RADSYSX_VIEWER_BASE_PATH__ = initialViewerBasePath;
+  window.__RADSYSX_NORMALIZE_SAME_ORIGIN_URL__ = normalizeSameOriginUrl;
 
   window.__RADSYSX_BOOTSTRAP_PROMISE__ = bootstrap();
 
@@ -110,6 +111,7 @@
   function stripSensitiveQuery() {
     const cleanParams = new URLSearchParams(window.location.search);
     cleanParams.delete("launch");
+    cleanParams.delete("_rsc");
     cleanParams.delete("StudyInstanceUIDs");
     cleanParams.delete("studyInstanceUIDs");
     cleanParams.delete("SeriesInstanceUIDs");
@@ -134,10 +136,14 @@
       return;
     }
 
-    dicomwebSource.configuration.qidoRoot = runtime.qidoRoot;
-    dicomwebSource.configuration.wadoRoot = runtime.wadoRoot;
-    dicomwebSource.configuration.wadoUriRoot = runtime.wadoUriRoot;
-    dicomwebSource.configuration.stowRoot = runtime.stowRoot;
+    dicomwebSource.configuration.qidoRoot = normalizeSameOriginUrl(runtime.qidoRoot);
+    dicomwebSource.configuration.wadoRoot = normalizeSameOriginUrl(runtime.wadoRoot);
+    dicomwebSource.configuration.wadoUriRoot = normalizeSameOriginUrl(runtime.wadoUriRoot);
+    if (runtime.featureFlags?.directStow && runtime.stowRoot) {
+      dicomwebSource.configuration.stowRoot = normalizeSameOriginUrl(runtime.stowRoot);
+    } else {
+      delete dicomwebSource.configuration.stowRoot;
+    }
   }
 
   function persistLaunchToken(token) {
@@ -177,14 +183,38 @@
       return null;
     }
 
-    const normalized = trimmed.replace(/\/+$/, "");
+    const normalized = `/${trimmed.replace(/^\/+/, "")}`.replace(/\/+$/, "");
     return normalized || "/";
   }
 
-  function ensureLoader() {
+  function normalizeSameOriginUrl(value) {
+    if (!value) {
+      return value;
+    }
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+    if (value.startsWith("/")) {
+      return `${window.location.origin}${value}`;
+    }
+    return value;
+  }
+
+  async function ensureLoader() {
     const existing = document.getElementById("radsysx-loader");
     if (existing) {
       return existing;
+    }
+
+    if (!document.body) {
+      await new Promise((resolve) => {
+        if (document.body) {
+          resolve(undefined);
+          return;
+        }
+
+        document.addEventListener("DOMContentLoaded", () => resolve(undefined), { once: true });
+      });
     }
 
     const element = document.createElement("div");
@@ -196,7 +226,7 @@
         <div class="radsysx-loader-body" data-role="body">Preparing the OHIF runtime...</div>
       </div>
     `;
-    document.body.appendChild(element);
+    (document.body ?? document.documentElement).appendChild(element);
     return element;
   }
 

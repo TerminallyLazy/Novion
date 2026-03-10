@@ -1,6 +1,8 @@
+import asyncio
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -184,7 +186,7 @@ def test_imaging_launch_returns_opaque_token_and_viewer_url_without_phi_in_url()
     body = response.json()
     assert body["signature"]
     assert body["launchToken"].startswith("launch-")
-    assert body["viewerUrl"].startswith("http://localhost:3000/viewer?launch=")
+    assert body["viewerUrl"].startswith("http://localhost:3000/viewer/?launch=")
     assert "study=" not in body["viewerUrl"]
     assert body["context"]["studyInstanceUID"] == payload["studyInstanceUID"]
     assert body["context"]["patientRef"] == "Patient/example-ct-01"
@@ -215,8 +217,30 @@ def test_launch_resolution_returns_viewer_runtime_and_same_origin_dicomweb_roots
     assert runtime["authMode"] == "local"
     assert runtime["qidoRoot"] == "/dicom-web"
     assert runtime["wadoRoot"] == "/dicom-web"
-    assert runtime["stowRoot"] == "/dicom-web"
+    assert runtime["stowRoot"] == ""
+    assert runtime["featureFlags"]["directStow"] is False
     assert runtime["featureFlags"]["localFileImport"] is False
+
+
+def test_imaging_launch_preserves_existing_viewer_base_url_query(monkeypatch) -> None:
+    login()
+    monkeypatch.setattr(
+        server_module.settings,
+        "viewer_base_url",
+        "http://localhost:3000/viewer/?theme=clinical&showStudyList=false",
+    )
+
+    response = client.post(
+        "/api/imaging/launch",
+        json={"studyInstanceUID": "1.2.840.113619.2.55.3.604688123.1234.1700000001.101"},
+    )
+    assert response.status_code == 200
+
+    viewer_url = response.json()["viewerUrl"]
+    params = dict(parse_qsl(urlsplit(viewer_url).query, keep_blank_values=True))
+    assert params["theme"] == "clinical"
+    assert params["showStudyList"] == "false"
+    assert params["launch"].startswith("launch-")
 
 
 def test_active_ai_mode_is_rejected_by_default() -> None:
@@ -345,6 +369,78 @@ def test_stow_endpoint_persists_backend_registered_refs(monkeypatch) -> None:
     assert workspace["derivedResults"][0]["storageClass"] == "SEG"
     assert workspace["derivedResults"][0]["metadata"]["source"] == "pytest-stow"
     assert workspace["derivedResults"][0]["metadata"]["stowFileName"] == "seg.dcm"
+
+
+def test_stow_endpoint_rejects_unsupported_content_type() -> None:
+    login()
+
+    response = client.post(
+        "/api/derived-results/stow",
+        data={
+            "studyInstanceUID": "1.2.840.113619.2.55.3.604688123.1234.1700000001.101",
+            "objectType": "seg",
+            "storageClass": "SEG",
+            "contentType": "text/plain",
+            "metadata": "{\"source\":\"pytest-stow-invalid\"}",
+        },
+        files={"files": ("seg.dcm", b"DICMSEG", "application/dicom")},
+    )
+
+    assert response.status_code == 400
+    assert "unsupported dicom stow contenttype" in response.json()["detail"].lower()
+
+
+def test_initialize_fhir_server_awaits_async_initializer() -> None:
+    class FakeFHIRServer:
+        def __init__(self) -> None:
+            self.initialized = False
+
+        async def initialize(self) -> bool:
+            self.initialized = True
+            return True
+
+    fake_server = FakeFHIRServer()
+    assert asyncio.run(server_module._initialize_fhir_server(fake_server)) is True
+    assert fake_server.initialized is True
+
+
+def test_fhir_tool_dispatch_matches_server_api(monkeypatch) -> None:
+    class FakeFHIRServer:
+        available = True
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, object, object]] = []
+
+        async def list_resources(self, uri_pattern: str, mime_type: str | None) -> list[str]:
+            self.calls.append(("list_resources", uri_pattern, mime_type))
+            return ["Patient", "Observation"]
+
+        async def call_tool(self, tool_name: str, params: dict[str, object]) -> dict[str, object]:
+            self.calls.append(("call_tool", tool_name, params))
+            return {"tool": tool_name, "params": params}
+
+    fake_server = FakeFHIRServer()
+    monkeypatch.setattr(server_module, "fhir_server", fake_server)
+
+    list_response = client.post("/fhir/tool", json={"tool": "list_fhir_resources", "params": {}})
+    assert list_response.status_code == 200
+    assert list_response.json() == {"result": ["Patient", "Observation"]}
+
+    demographics_response = client.post(
+        "/fhir/tool",
+        json={"tool": "get_patient_demographics", "params": {"patient_id": "example"}},
+    )
+    assert demographics_response.status_code == 200
+    assert demographics_response.json() == {
+        "result": {
+            "tool": "get_patient_demographics",
+            "params": {"patient_id": "example"},
+        }
+    }
+    assert fake_server.calls == [
+        ("list_resources", "", None),
+        ("call_tool", "get_patient_demographics", {"patient_id": "example"}),
+    ]
 
 
 def test_seed_orthanc_logs_without_identifiers(monkeypatch, capsys) -> None:

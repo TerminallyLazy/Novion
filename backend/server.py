@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -30,12 +31,19 @@ except Exception as exc:
     def enable_disable_mcp(enabled: bool):  # type: ignore
         return f"MCP toggle unavailable because RadSysX failed to import: {exc}"
 
+MCP_IMPORT_ERROR = None
+
 try:
     from backend.mcp.fhir_server import FHIRMCPServer  # type: ignore
     from backend.mcp.client import RadSysXMCPClient  # type: ignore
-except ModuleNotFoundError:
-    from mcp.fhir_server import FHIRMCPServer
-    from mcp.client import RadSysXMCPClient
+except Exception:
+    try:
+        from mcp.fhir_server import FHIRMCPServer
+        from mcp.client import RadSysXMCPClient
+    except Exception as exc:
+        MCP_IMPORT_ERROR = exc
+        FHIRMCPServer = None  # type: ignore[assignment]
+        RadSysXMCPClient = None  # type: ignore[assignment]
 
 CHAT_IMPORT_ERROR = None
 
@@ -78,7 +86,11 @@ try:
         SessionClaims,
         SessionResponse,
     )
-    from backend.clinical.dicomweb import OrthancDICOMwebAdapter, UploadedDicomPart
+    from backend.clinical.dicomweb import (
+        OrthancDICOMwebAdapter,
+        UploadedDicomPart,
+        normalize_dicom_stow_content_type,
+    )
     from backend.clinical.repositories import ClinicalRepository
     from backend.clinical.services import ClinicalPlatformService
 except ModuleNotFoundError:
@@ -96,7 +108,11 @@ except ModuleNotFoundError:
         SessionClaims,
         SessionResponse,
     )
-    from clinical.dicomweb import OrthancDICOMwebAdapter, UploadedDicomPart
+    from clinical.dicomweb import (
+        OrthancDICOMwebAdapter,
+        UploadedDicomPart,
+        normalize_dicom_stow_content_type,
+    )
     from clinical.repositories import ClinicalRepository
     from clinical.services import ClinicalPlatformService
 
@@ -104,6 +120,55 @@ settings = get_settings()
 session_manager = ClinicalSessionManager(settings)
 
 app = FastAPI(title="RadSysX API")
+
+
+class _FallbackFHIRServer:
+    available = False
+
+    def __init__(self, reason: Exception | str) -> None:
+        self.unavailable_reason = str(reason)
+
+    async def initialize(self):
+        return None
+
+    async def list_resources(self, uri_pattern: str = "", mime_type: str | None = None):
+        return {"error": f"FHIR integration unavailable: {self.unavailable_reason}"}
+
+    async def call_tool(self, tool_name: str, params: dict[str, Any]):
+        return {
+            "error": f"FHIR integration unavailable: {self.unavailable_reason}",
+            "tool": tool_name,
+            "params": params,
+        }
+
+    async def get_patient_demographics(self, patient_id: str):
+        return await self.call_tool("get_patient_demographics", {"patient_id": patient_id})
+
+    async def get_medication_list(self, patient_id: str):
+        return await self.call_tool("get_medication_list", {"patient_id": patient_id})
+
+    async def search_resources(self, resource_type: str, search_params: dict):
+        return await self.call_tool(
+            "search_fhir_resources",
+            {"resource_type": resource_type, "params": search_params},
+        )
+
+
+async def _initialize_fhir_server(server: Any) -> Any:
+    initialize = getattr(server, "initialize", None)
+    if initialize is None:
+        return None
+    if inspect.iscoroutinefunction(initialize):
+        return await initialize()
+    return await asyncio.to_thread(initialize)
+
+
+async def _execute_fhir_tool_request(tool_name: str, params: dict[str, Any]) -> Any:
+    if tool_name == "list_fhir_resources":
+        return await fhir_server.list_resources("", None)
+    if tool_name in {"get_patient_demographics", "get_medication_list", "search_fhir_resources"}:
+        return await fhir_server.call_tool(tool_name, params)
+    raise ValueError(f"Unknown FHIR tool: {tool_name}")
 
 # Define the path to frontend files
 frontend_dir = pathlib.Path(__file__).parent.parent / "frontend"
@@ -257,29 +322,11 @@ async def stream(request: Request):
 
 # Create FHIR server instance for handling tool requests
 try:
+    if FHIRMCPServer is None:
+        raise RuntimeError(MCP_IMPORT_ERROR or "FHIR/MCP imports are unavailable.")
     fhir_server = FHIRMCPServer()
 except Exception as exc:
-    class _FallbackFHIRServer:
-        async def initialize(self):
-            return None
-
-        async def list_resources(self):
-            return {"error": f"FHIR integration unavailable: {exc}"}
-
-        async def get_patient_demographics(self, patient_id: str):
-            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
-
-        async def get_medication_list(self, patient_id: str):
-            return {"error": f"FHIR integration unavailable: {exc}", "patient_id": patient_id}
-
-        async def search_resources(self, resource_type: str, search_params: dict):
-            return {
-                "error": f"FHIR integration unavailable: {exc}",
-                "resource_type": resource_type,
-                "params": search_params,
-            }
-
-    fhir_server = _FallbackFHIRServer()
+    fhir_server = _FallbackFHIRServer(exc)
 clinical_repository = ClinicalRepository(settings.clinical_database_url)
 clinical_service = ClinicalPlatformService(
     settings=settings,
@@ -292,16 +339,23 @@ clinical_repository.initialize()
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
-    try:
-        # Initialize the FHIR server
-        await asyncio.to_thread(fhir_server.initialize)
+    if RADSYSX_IMPORT_ERROR is not None:
+        print(f"Research agent stack unavailable: {RADSYSX_IMPORT_ERROR}")
+
+    if getattr(fhir_server, "available", True):
+        await _initialize_fhir_server(fhir_server)
         print("✅ FHIR server initialized and MCP integration enabled")
-        
-        # Initialize chat interface
+    else:
+        print(
+            "FHIR/MCP integration unavailable: "
+            f"{getattr(fhir_server, 'unavailable_reason', 'unknown reason')}"
+        )
+
+    if CHAT_IMPORT_ERROR is None:
         initialize_chat_interface()
         print("✅ Chat interface initialized")
-    except Exception as e:
-        print(f"Error initializing services: {e}")
+    else:
+        print(f"Chat interface unavailable: {CHAT_IMPORT_ERROR}")
 
 
 def _client_ip(request: Request) -> str:
@@ -486,6 +540,10 @@ async def store_derived_results_stow(
         metadata_json = json.loads(metadata) if metadata else {}
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid metadata JSON: {exc.msg}") from exc
+    try:
+        normalized_content_type = normalize_dicom_stow_content_type(content_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     payload = DerivedResultStowRequest(
         study_instance_uid=study_instance_uid,
@@ -493,7 +551,7 @@ async def store_derived_results_stow(
         storage_class=storage_class,
         series_instance_uid=series_instance_uid,
         sop_instance_uid=sop_instance_uid,
-        content_type=content_type,
+        content_type=normalized_content_type,
         metadata=metadata_json,
         trace_id=trace_id,
     )
@@ -528,27 +586,10 @@ async def get_study_audit(study_uid: str, http_request: Request):
 async def fhir_tool(request: FHIRToolRequest):
     """API endpoint to call FHIR tools via MCP."""
     try:
-        # Process the tool request
-        tool_name = request.tool
-        params = request.params
-        
-        # Map the tool name to the corresponding function
-        if tool_name == "list_fhir_resources":
-            result = await fhir_server.list_resources()
-        elif tool_name == "get_patient_demographics":
-            patient_id = params.get("patient_id", "example")
-            result = await fhir_server.get_patient_demographics(patient_id)
-        elif tool_name == "get_medication_list":
-            patient_id = params.get("patient_id", "example")
-            result = await fhir_server.get_medication_list(patient_id)
-        elif tool_name == "search_fhir_resources":
-            resource_type = params.get("resource_type", "Patient")
-            search_params = params.get("params", {})
-            result = await fhir_server.search_resources(resource_type, search_params)
-        else:
-            return {"error": f"Unknown FHIR tool: {tool_name}"}
-        
+        result = await _execute_fhir_tool_request(request.tool, request.params)
         return {"result": result}
+    except ValueError as exc:
+        return {"error": str(exc)}
     except Exception as e:
         import traceback
         print(f"Error executing FHIR tool: {str(e)}")
